@@ -5,7 +5,6 @@ Proto-Scan is a web application that scans French Tennis Federation (FFT) licens
 ## Features
 
 -   **Camera-based scanning:** Uses the device's camera to capture an image of the license.
--   **Automatic image capture:** Utilizes OpenCV.js to analyze the video stream and automatically capture a sharp image.
 -   **AI-powered information extraction:** Employs the Google Gemini AI to extract the following information from the license image:
     -   Last Name
     -   First Name
@@ -26,7 +25,6 @@ Proto-Scan is a web application that scans French Tennis Federation (FFT) licens
 ### Frontend
 
 -   **HTML/CSS/JavaScript:** The standard trio for web development.
--   **OpenCV.js:** A JavaScript library for computer vision, used for sharpness detection.
 
 ### Containerization
 
@@ -63,8 +61,7 @@ Proto-Scan is a web application that scans French Tennis Federation (FFT) licens
 ## How it Works
 
 1.  The user points their device's camera at the FFT license.
-2.  The frontend, using OpenCV.js, continuously analyzes the video stream for a sharp image.
-3.  Once a clear image is detected, it is captured and sent to the Flask backend.
+2.  Once a clear image is detected, it is captured and sent to the Flask backend.
 4.  The backend receives the image and sends it to the Google Gemini AI with a prompt to extract the relevant information.
 5.  The AI returns the extracted data in JSON format.
 6.  The backend sends the JSON data to the frontend.

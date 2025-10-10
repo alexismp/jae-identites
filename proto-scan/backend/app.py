@@ -11,7 +11,7 @@ load_dotenv()
 
 # Initialiser Flask pour servir les fichiers statiques depuis le dossier 'static'
 # et les templates depuis le dossier 'templates'
-app = Flask(__name__, static_folder='../static', template_folder='templates')
+app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
 # Configurer l'API Gemini
@@ -54,16 +54,12 @@ def scan_image():
             # Préparer le modèle et le prompt pour Gemini
             model = genai.GenerativeModel('gemini-2.5-flash')
 
+            with open('prompt.txt', 'r') as f:
+                prompt = f.read()
+
             prompt_parts = [
                 img,
-                "\nAnalyse l'image de cette attestation de licence de la Fédération Française de Tennis (FFT) et extrais les informations suivantes au format JSON strict :",
-                "1. `nom`: Le nom de famille de la personne (en majuscules).",
-                "2. `prenom`: Le prénom de la personne.",
-                "3. `licence`: Le numéro de licence. Il se trouve généralement sur la deuxième ligne et est composé de chiffres et/ou d'une lettre.",
-                "4. `annee_validite`: L'année de validité de la licence. C'est un nombre de 4 chiffres bien visible.",
-                "5. `classement`: Le classement tennis. Il se trouve à droite de la mention 'Classement tennis'. Les valeurs possibles sont NC, 40, 30/5, 30/4, 30/3, 30/2, 30/1, 30, 15/5, 15/4, 15/3, 15/2, 15/1, 15, 5/6, 4/6, 3/6, 2/6, 1/6, 0, -2/6, -4/6, -15, ou un nombre. Ne retourne que la valeur du classement.",
-                "\nExemple de réponse attendue : {\"nom\": \"MARTIN\", \"prenom\": \"Léa\", \"licence\": \"1234567B\", \"annee_validite\": \"2025\", \"classement\": \"30/1\"}",
-                "\nNe retourne que le JSON, sans aucun texte ou formatage supplémentaire comme les backticks '```json'."
+                prompt
             ]
 
             # Générer le contenu

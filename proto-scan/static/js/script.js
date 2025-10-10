@@ -1,28 +1,24 @@
-let cvReady = false;
-let stream;
-const sharpnessThreshold = 100; // Seuil de netteté, à ajuster si nécessaire
-let isProcessing = false;
-
-// Cette fonction est appelée par le tag <script> dans index.html une fois OpenCV chargé
-function onOpenCvReady() {
-    cv['onRuntimeInitialized'] = () => {
-        console.log("OpenCV.js est prêt.");
-        cvReady = true;
-        // On peut maintenant démarrer la logique de la caméra
-        startApp();
-    };
-}
-
 document.addEventListener('DOMContentLoaded', () => {
-    // Si OpenCV est déjà prêt au moment où le DOM est chargé, on lance l'app
-    if (cvReady) {
-        startApp();
-    }
+    startApp();
 });
 
 function startApp() {
+    let stream;
+    let isProcessing = false;
+    let isShowingResults = false;
     const video = document.getElementById('video');
     const statusMessage = document.getElementById('status-message');
+    const manualCaptureButton = document.getElementById('manual-capture-button');
+
+    manualCaptureButton.addEventListener('click', () => {
+        if (isShowingResults) {
+            location.reload();
+        } else if (!isProcessing) {
+            isProcessing = true;
+            statusMessage.textContent = "Capture manuelle, scan en cours...";
+            captureAndSend();
+        }
+    });
 
     async function startCamera() {
         if (stream) return; // Si la caméra est déjà active, on ne fait rien
@@ -36,8 +32,6 @@ function startApp() {
 
             video.addEventListener('loadedmetadata', () => {
                 statusMessage.textContent = "Veuillez cadrer la carte dans le rectangle.";
-                // Démarrer l'analyse d'image une fois la vidéo chargée
-                requestAnimationFrame(processVideo);
             });
 
         } catch (err) {
@@ -50,46 +44,6 @@ function startApp() {
         }
     }
 
-    function processVideo() {
-        if (!cvReady || isProcessing) {
-            return;
-        }
-
-        const cap = new cv.VideoCapture(video);
-        const frame = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC4);
-
-        cap.read(frame); // Lire une image de la vidéo
-
-        const gray = new cv.Mat();
-        cv.cvtColor(frame, gray, cv.COLOR_RGBA2GRAY);
-
-        const laplacian = new cv.Mat();
-        cv.Laplacian(gray, laplacian, cv.CV_64F);
-
-        const mean = new cv.Mat();
-        const stddev = new cv.Mat();
-        cv.meanStdDev(laplacian, mean, stddev);
-        const sharpness = stddev.data64F[0] ** 2;
-
-        console.log("Netteté:", sharpness.toFixed(2));
-
-        if (sharpness > sharpnessThreshold) {
-            isProcessing = true; // Empêcher les captures multiples
-            statusMessage.textContent = "Image nette détectée, scan en cours...";
-            captureAndSend();
-        } else {
-            // Continuer l'analyse
-            requestAnimationFrame(processVideo);
-        }
-
-        // Libérer la mémoire
-        frame.delete();
-        gray.delete();
-        laplacian.delete();
-        mean.delete();
-        stddev.delete();
-    }
-
     function captureAndSend() {
         const canvas = document.createElement('canvas');
         canvas.width = video.videoWidth;
@@ -97,12 +51,15 @@ function startApp() {
         const context = canvas.getContext('2d');
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
+        const frozenImage = document.getElementById('frozen-image');
+        frozenImage.src = canvas.toDataURL('image/jpeg');
+
+        video.style.display = 'none';
+        frozenImage.style.display = 'block';
+
         // Arrêter le flux vidéo
         stream.getTracks().forEach(track => track.stop());
         video.srcObject = null;
-
-        // Afficher l'image capturée (optionnel, pour debug)
-        // document.body.appendChild(canvas);
 
         canvas.toBlob(async (blob) => {
             console.log(`Image capturée, taille: ${Math.round(blob.size / 1024)} KB. Envoi au serveur...`);
@@ -139,6 +96,8 @@ function startApp() {
     function displayResults(data) {
         const resultsContainer = document.getElementById('results-container');
         const statusMessage = document.getElementById('status-message');
+        const frozenImage = document.getElementById('frozen-image');
+        const video = document.getElementById('video');
 
         if (data.error) {
             resultsContainer.innerHTML = `<p style="color: red;">Erreur d'extraction : ${data.error}</p>`;
@@ -149,12 +108,19 @@ function startApp() {
                 <p><strong>Licence:</strong> ${data.licence || 'N/A'}</p>
                 <p><strong>Validité:</strong> ${data.annee_validite || 'N/A'}</p>
                 <p><strong>Classement:</strong> ${data.classement || 'N/A'}</p>
+                <h3>Raw JSON:</h3>
+                <pre>${JSON.stringify(data, null, 2)}</pre>
             `;
         }
 
         statusMessage.textContent = "Scan terminé !";
         statusMessage.style.color = '#555'; // Revenir à la couleur par défaut
         isProcessing = false; // Permettre un nouveau scan si nécessaire
+        isShowingResults = true;
+        manualCaptureButton.textContent = "Restart";
+        frozenImage.style.display = 'none';
+        video.style.display = 'block';
+        startCamera();
     }
 
     startCamera();

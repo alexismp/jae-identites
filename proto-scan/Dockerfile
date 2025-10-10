@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Le backend est à la racine, le frontend dans /app/static
 COPY backend/ /app/
 COPY static/ /app/static/
-COPY index.html /app/templates/
+
 
 # Rendre le port 8080 disponible pour le monde extérieur
 EXPOSE 8080

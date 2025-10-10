@@ -7,17 +7,20 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <h1>Scan de Carte de Fidélité</h1>
+    <h1>JAE Scan</h1>
     <div id="scanner-container">
-        <video id="video" playsinline></video>
+        <div id="video-wrapper">
+            <video id="video" playsinline></video>
+        </div>
+        <img id="frozen-image" src="" alt="Frozen Image" style="display: none;">
         <div id="overlay">
             <div class="scan-guide"></div>
         </div>
     </div>
+    <button id="manual-capture-button">Scan</button>
     <div id="status-message"></div>
     <div id="results-container"></div>
-    <!-- OpenCV.js -->
-    <script async src="https://docs.opencv.org/4.10.0/opencv.js" onload="onOpenCvReady();"></script>
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <!--button id="manual-capture-button">Scan</button-->
+        <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>
