@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proto-Scan</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <h1>Scan de Carte de Fidélité</h1>
+    <div id="scanner-container">
+        <video id="video" playsinline></video>
+        <div id="overlay">
+            <div class="scan-guide"></div>
+        </div>
+    </div>
+    <div id="status-message"></div>
+    <div id="results-container"></div>
+    <!-- OpenCV.js -->
+    <script async src="https://docs.opencv.org/4.10.0/opencv.js" onload="onOpenCvReady();"></script>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
