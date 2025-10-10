@@ -7,15 +7,26 @@ function startApp() {
     let isProcessing = false;
     let isShowingResults = false;
     const video = document.getElementById('video');
-    const statusMessage = document.getElementById('status-message');
+    const scannerMessage = document.getElementById('scanner-message');
     const manualCaptureButton = document.getElementById('manual-capture-button');
+
+    function showScannerMessage(message, isError = false) {
+        scannerMessage.textContent = message;
+        scannerMessage.style.backgroundColor = isError ? 'rgba(255, 0, 0, 0.7)' : 'rgba(0, 0, 0, 0.7)';
+        scannerMessage.style.display = 'flex';
+    }
+
+    function hideScannerMessage() {
+        scannerMessage.style.display = 'none';
+    }
 
     manualCaptureButton.addEventListener('click', () => {
         if (isShowingResults) {
             location.reload();
         } else if (!isProcessing) {
             isProcessing = true;
-            statusMessage.textContent = "Scan en cours...";
+            showScannerMessage("Scan en cours...");
+            manualCaptureButton.style.backgroundColor = '#007bff';
             captureAndSend();
         }
     });
@@ -31,7 +42,7 @@ function startApp() {
             video.setAttribute('autoplay', '');
 
             video.addEventListener('loadedmetadata', () => {
-                statusMessage.textContent = "Veuillez cadrer la carte dans le rectangle.";
+                hideScannerMessage();
             });
 
         } catch (err) {
@@ -39,8 +50,7 @@ function startApp() {
             let message = "Impossible d'accéder à la caméra.";
             if (err.name === "NotAllowedError") message = "Vous avez refusé l'accès à la caméra. Veuillez autoriser l'accès dans les paramètres de votre navigateur.";
             else if (err.name === "NotFoundError") message = "Aucune caméra compatible n'a été trouvée sur cet appareil.";
-            statusMessage.textContent = message;
-            statusMessage.style.color = 'red';
+            showScannerMessage(message, true);
         }
     }
 
@@ -108,8 +118,7 @@ function startApp() {
 
             } catch (error) {
                 console.error('Erreur lors de l\'envoi de l\'image:', error);
-                statusMessage.textContent = `Erreur: ${error.message}`;
-                statusMessage.style.color = 'red';
+                showScannerMessage(`Erreur: ${error.message}`, true);
                 isProcessing = false; // Permettre une nouvelle tentative
             }
 
@@ -118,15 +127,24 @@ function startApp() {
 
     function displayResults(data) {
         const resultsContainer = document.getElementById('results-container');
-        const statusMessage = document.getElementById('status-message');
         const frozenImage = document.getElementById('frozen-image');
         const video = document.getElementById('video');
+
+        hideScannerMessage();
+        resultsContainer.style.display = 'block';
 
         if (data.error) {
             resultsContainer.innerHTML = `<p style="color: red;">Erreur d'extraction : ${data.error}</p>`;
         } else {
+            let typeMessage = '';
+            if (data.type) {
+                const typeText = data.type.charAt(0).toUpperCase() + data.type.slice(1);
+                typeMessage = `<p style="font-weight: bold; color: blue;">Type: ${typeText}</p>`;
+            }
+
              resultsContainer.innerHTML = `
                 <h3>Résultats de l'extraction</h3>
+                ${typeMessage}
                 <p><strong>Nom:</strong> ${data.prenom || 'N/A'} ${data.nom || 'N/A'}</p>
                 <p><strong>Licence:</strong> ${data.licence || 'N/A'}</p>
                 <p><strong>Validité:</strong> ${data.annee_validite || 'N/A'}</p>
@@ -136,15 +154,50 @@ function startApp() {
             `;
         }
 
-        statusMessage.textContent = "Scan terminé !";
-        statusMessage.style.color = '#555'; // Revenir à la couleur par défaut
         isProcessing = false; // Permettre un nouveau scan si nécessaire
         isShowingResults = true;
-        manualCaptureButton.textContent = "Restart";
+        manualCaptureButton.textContent = "♻️";
+        manualCaptureButton.style.backgroundColor = 'grey';
         frozenImage.style.display = 'none';
         video.style.display = 'block';
         startCamera();
     }
 
     startCamera();
+
+    function handleOrientation() {
+        const orientationMessage = document.getElementById('orientation-message');
+        const mainContainer = document.getElementById('main-container');
+        const resultsContainer = document.getElementById('results-container');
+
+        if (window.innerHeight > window.innerWidth) {
+            // Portrait
+            if (isShowingResults) {
+                mainContainer.style.display = 'flex';
+                resultsContainer.style.display = 'block';
+                orientationMessage.style.display = 'none';
+            } else {
+                mainContainer.style.display = 'none';
+                resultsContainer.style.display = 'none';
+                orientationMessage.style.display = 'flex';
+            }
+
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+        } else {
+            // Landscape
+            mainContainer.style.display = 'flex';
+            resultsContainer.style.display = isShowingResults ? 'block' : 'none';
+            orientationMessage.style.display = 'none';
+
+            if (!stream) {
+                startCamera();
+            }
+        }
+    }
+
+    window.addEventListener('resize', handleOrientation);
+    handleOrientation(); // Initial check
 }
