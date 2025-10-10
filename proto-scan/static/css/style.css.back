@@ -16,7 +16,6 @@ h1 {
     position: relative;
     width: 90vw; /* Use viewport width for better phone experience */
     max-width: 500px; /* Max width for larger screens */
-    max-height: 315.25px; /* 500px * 0.6305 */
     border: 2px solid #ccc;
     border-radius: 8px;
     overflow: hidden;
@@ -29,7 +28,7 @@ h1 {
     padding-top: 63.05%; /* 1.586:1 Aspect Ratio */
 }
 
-#video, #frozen-image {
+#video {
     position: absolute;
     top: 0;
     left: 0;

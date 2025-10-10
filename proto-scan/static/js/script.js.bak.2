@@ -15,7 +15,7 @@ function startApp() {
             location.reload();
         } else if (!isProcessing) {
             isProcessing = true;
-            statusMessage.textContent = "Scan en cours...";
+            statusMessage.textContent = "Capture manuelle, scan en cours...";
             captureAndSend();
         }
     });

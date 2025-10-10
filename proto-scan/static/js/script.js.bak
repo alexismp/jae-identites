@@ -15,7 +15,7 @@ function startApp() {
             location.reload();
         } else if (!isProcessing) {
             isProcessing = true;
-            statusMessage.textContent = "Scan en cours...";
+            statusMessage.textContent = "Capture manuelle, scan en cours...";
             captureAndSend();
         }
     });
@@ -23,7 +23,7 @@ function startApp() {
     async function startCamera() {
         if (stream) return; // Si la caméra est déjà active, on ne fait rien
         try {
-            const constraints = { video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 }, aspectRatio: { ideal: 1.586 } } };
+            const constraints = { video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } };
             stream = await navigator.mediaDevices.getUserMedia(constraints);
             video.srcObject = stream;
             video.setAttribute('playsinline', '');
@@ -45,34 +45,11 @@ function startApp() {
     }
 
     function captureAndSend() {
-        const videoWrapper = document.getElementById('video-wrapper');
         const canvas = document.createElement('canvas');
-        canvas.width = videoWrapper.clientWidth;
-        canvas.height = videoWrapper.clientHeight;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
         const context = canvas.getContext('2d');
-
-        const videoAspectRatio = video.videoWidth / video.videoHeight;
-        const canvasAspectRatio = canvas.width / canvas.height;
-        let renderableHeight, renderableWidth, xStart, yStart;
-
-        if (videoAspectRatio < canvasAspectRatio) {
-            renderableHeight = canvas.height;
-            renderableWidth = renderableHeight * videoAspectRatio;
-            xStart = (canvas.width - renderableWidth) / 2;
-            yStart = 0;
-        } else if (videoAspectRatio > canvasAspectRatio) {
-            renderableWidth = canvas.width;
-            renderableHeight = renderableWidth / videoAspectRatio;
-            xStart = 0;
-            yStart = (canvas.height - renderableHeight) / 2;
-        } else {
-            renderableHeight = canvas.height;
-            renderableWidth = canvas.width;
-            xStart = 0;
-            yStart = 0;
-        }
-
-        context.drawImage(video, xStart, yStart, renderableWidth, renderableHeight);
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
         const frozenImage = document.getElementById('frozen-image');
         frozenImage.src = canvas.toDataURL('image/jpeg');

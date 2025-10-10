@@ -5,8 +5,9 @@ Analyse l'image. S'il n'y a pas de photo sur le document, alors c'est une attest
 4. `annee_validite`: L'année de validité de la licence. C'est un nombre de 4 chiffres bien visible.
 5. `classement`: Le classement tennis. Il se trouve à droite de la mention 'Classement tennis'. Les valeurs possibles sont NC, 40, 30/5, 30/4, 30/3, 30/2, 30/1, 30, 15/5, 15/4, 15/3, 15/2, 15/1, 15, 5/6, 4/6, 3/6, 2/6, 1/6, 0, -2/6, -4/6, -15, ou un nombre. Ne retourne que la valeur du classement.
 
-Exemple de réponse attendue : {"nom": "MARTIN", "prenom": "Léa", "licence": "1234567B", "annee_validite": "2025", "classement": "30/1"}
+Exemple de réponse attendue : {"nom": "MARTIN", "prenom": "Léa", "licence": "1234567B", "annee_validite": "2025", "classement": "30/1", "type": "licence"}
 
-Si le document comporte une photo, alors c'est une pièce d'identité dont tu dois extraire uniquement le Nom et le prénom avec une réponse au format {"nom": "MARTIN", "prenom": "Léa"} 
+Si le document comporte une photo, alors c'est une pièce d'identité dont tu dois extraire uniquement le Nom et le prénom avec une réponse au format {"nom": "MARTIN", "prenom": "Léa", "type": "identite" } 
 
 Dans les deux cas, ne retourne que le JSON, sans aucun texte ou formatage supplémentaire comme les backticks '```json'.
+Si la précision n'est pas excellente, n'essaye pas de deviner les données.
