@@ -83,8 +83,8 @@ def handle_storage_event(bucket_name, file_name):
             json_data = json.loads(response_text)
             
             # Extraire le prénom et le nom de famille pour le nom du fichier
-            first_name = json_data.get("first_name", "unknown")
-            last_name = json_data.get("last_name", "unknown")
+            first_name = json_data.get("prenom", "unknown")
+            last_name = json_data.get("nom", "unknown")
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             result_filename = f"{first_name}-{last_name}-{timestamp}.json"
 
