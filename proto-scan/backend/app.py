@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 from PIL import Image
 import io
+from datetime import datetime
+from google.cloud import storage
 
 # Charger les variables d'environnement (pour la clé API)
 load_dotenv()
@@ -47,6 +49,27 @@ def scan_image():
             img_bytes = file.read()
             img = Image.open(io.BytesIO(img_bytes))
 
+            # Uploader l'image sur Google Cloud Storage
+            try:
+                storage_client = storage.Client()
+                bucket_name = "jae-scan-bucket"
+                bucket = storage_client.bucket(bucket_name)
+                
+                # Créer un nom de fichier unique avec un timestamp
+                timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                unique_filename = f"{timestamp}-{file.filename}"
+                blob = bucket.blob(unique_filename)
+                
+                # Uploader les bytes de l'image
+                blob.upload_from_string(img_bytes, content_type=file.content_type)
+                print(f"Image {unique_filename} uploaded to {bucket_name}.")
+                print(f"Image {unique_filename} uploadée avec succès sur {bucket_name}")
+
+            except Exception as e:
+                print(f"Erreur lors de l'upload sur Google Cloud Storage : {e}")
+                # On ne bloque pas le flux principal si l'upload échoue, 
+                # mais on log l'erreur pour le débogage.
+
             # À ce stade, l'image est prête à être envoyée à Gemini.
             # Pour l'instant, nous confirmons simplement la réception.
             print(f"Image reçue: {file.filename}, format: {img.format}, taille: {img.size}")
@@ -63,7 +86,7 @@ def scan_image():
             ]
 
             # Générer le contenu
-            response = model.generate_content(prompt_parts)
+            response = model.generate_content(prompt_parts, generation_config=genai.types.GenerationConfig(temperature=0.2))
 
             # Extraire et nettoyer la réponse JSON
             response_text = response.text.strip()
