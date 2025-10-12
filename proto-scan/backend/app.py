@@ -78,41 +78,42 @@ def scan_image():
             # Pour l'instant, nous confirmons simplement la réception.
             print(f"Image reçue: {file.filename}, format: {img.format}, taille: {img.size}")
 
-            # Préparer le modèle et le prompt pour Gemini
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            # # Préparer le modèle et le prompt pour Gemini
+            # model = genai.GenerativeModel('gemini-2.5-flash')
 
-            with open('prompt.txt', 'r') as f:
-                prompt = f.read()
+            # with open('prompt.txt', 'r') as f:
+            #     prompt = f.read()
 
-            prompt_parts = [
-                img,
-                prompt
-            ]
+            # prompt_parts = [
+            #     img,
+            #     prompt
+            # ]
 
-            # Générer le contenu
-            response = model.generate_content(prompt_parts, generation_config=genai.types.GenerationConfig(temperature=0.2))
+            # # Générer le contenu
+            # response = model.generate_content(prompt_parts, generation_config=genai.types.GenerationConfig(temperature=0.2))
 
-            # Extraire et nettoyer la réponse JSON
-            response_text = response.text.strip()
+            # # Extraire et nettoyer la réponse JSON
+            # response_text = response.text.strip()
 
-            # S'assurer que la réponse est bien du JSON
-            try:
-                # On retire les potentiels démarqueurs de code block
-                if response_text.startswith("```json"):
-                    response_text = response_text[7:]
-                if response_text.endswith("```"):
-                    response_text = response_text[:-3]
+            # # S'assurer que la réponse est bien du JSON
+            # try:
+            #     # On retire les potentiels démarqueurs de code block
+            #     if response_text.startswith("```json"):
+            #         response_text = response_text[7:]
+            #     if response_text.endswith("```"):
+            #         response_text = response_text[:-3]
 
-                import json
-                json_data = json.loads(response_text)
-                return jsonify(json_data)
-            except json.JSONDecodeError:
-                print(f"Erreur: La réponse de Gemini n'est pas un JSON valide. Réponse reçue:\n{response.text}")
-                return jsonify({"error": "Erreur lors de l'analyse de la réponse du modèle IA.", "raw_response": response.text}), 500
+            #     import json
+            #     json_data = json.loads(response_text)
+            #     return jsonify(json_data)
+            # except json.JSONDecodeError:
+            #     print(f"Erreur: La réponse de Gemini n'est pas un JSON valide. Réponse reçue:\n{response.text}")
+            #     return jsonify({"error": "Erreur lors de l'analyse de la réponse du modèle IA.", "raw_response": response.text}), 500
+            return jsonify({"uploaded_file": unique_filename})
 
         except Exception as e:
-            print(f"Erreur lors de l'appel à l'API Gemini : {e}")
-            return jsonify({"error": f"Erreur lors de la communication avec le service d'IA: {str(e)}"}), 500
+            print(f"Erreur lors de l'upload ou de la manipulation de l'image : {e}")
+            return jsonify({"error": f"Erreur lors de l'upload ou de la manipulation de l'image: {str(e)}"}), 500
 
     return jsonify({"error": "Une erreur inattendue est survenue"}), 500
 
