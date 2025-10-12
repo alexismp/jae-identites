@@ -39,6 +39,29 @@ Après avoir construit l'image Docker localement, vous pouvez la déployer sur C
     gcloud run deploy jae-ocr --image europe-west1-docker.pkg.dev/alexismp-runner/jae-identites-repo/jae-ocr:latest --region europe-west1
     ```
 
+## Configuration du Déclencheur (Trigger)
+
+Pour que le service `jae-ocr` soit automatiquement déclenché lors du téléversement d'un fichier dans le bucket `gs://jae-scan-bucket`, vous devez créer un déclencheur Eventarc.
+
+1.  **Trouver le compte de service :**
+    Vous aurez besoin de l'adresse e-mail du compte de service qui sera utilisé par le déclencheur. Vous pouvez utiliser le compte de service Compute Engine par défaut. Pour le trouver, exécutez la commande suivante en remplaçant `alexismp-runner` par votre ID de projet :
+    ```bash
+    gcloud projects describe alexismp-runner --format="value(projectNumber)"
+    ```
+    Le compte de service sera `[NUMERO_PROJET]-compute@developer.gserviceaccount.com`. Pour ce projet, c'est `2500276981-compute@developer.gserviceaccount.com`.
+
+2.  **Créer le déclencheur :**
+    Exécutez la commande suivante pour créer le déclencheur. Assurez-vous que le bucket se trouve dans la même région que le déclencheur (ici, `eu`).
+    ```bash
+    gcloud eventarc triggers create jae-ocr-trigger \
+        --location=eu \
+        --destination-run-service=jae-ocr \
+        --destination-run-region=europe-west1 \
+        --event-filters="type=google.cloud.storage.object.v1.finalized" \
+        --event-filters="bucket=jae-scan-bucket" \
+        --service-account="2500276981-compute@developer.gserviceaccount.com"
+    ```
+
 ## Fonctionnement
 
 1.  Un fichier image est téléchargé dans le bucket Cloud Storage d'entrée.
