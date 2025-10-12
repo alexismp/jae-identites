@@ -35,8 +35,9 @@ Après avoir construit l'image Docker localement, vous pouvez la déployer sur C
     ```
 
 4.  **Déployer sur Cloud Run :**
+    Assurez-vous d'inclure la variable d'environnement `GOOGLE_API_KEY` lors du déploiement.
     ```bash
-    gcloud run deploy jae-ocr --image europe-west1-docker.pkg.dev/alexismp-runner/jae-identites-repo/jae-ocr:latest --region europe-west1
+    gcloud run deploy jae-ocr --image europe-west1-docker.pkg.dev/alexismp-runner/jae-identites-repo/jae-ocr:latest --region europe-west1 --set-env-vars="GOOGLE_API_KEY=[VOTRE_CLE_API]"
     ```
 
 ## Configuration du Déclencheur (Trigger)
