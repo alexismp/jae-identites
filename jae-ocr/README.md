@@ -63,6 +63,25 @@ Pour que le service `jae-ocr` soit automatiquement déclenché lors du téléver
         --service-account="2500276981-compute@developer.gserviceaccount.com"
     ```
 
+## Permissions
+
+Le compte de service utilisé par le service Cloud Run (ici, `2500276981-compute@developer.gserviceaccount.com`) doit disposer des autorisations IAM suivantes pour fonctionner correctement :
+
+-   **Storage Object Admin (`roles/storage.objectAdmin`)**: Pour lire les images du bucket source et écrire les résultats JSON dans le bucket de destination.
+-   **AI Platform User (`roles/aiplatform.user`)**: Pour utiliser l'API Gemini.
+
+Vous pouvez ajouter ces rôles au compte de service avec les commandes `gcloud` suivantes :
+
+```bash
+gcloud projects add-iam-policy-binding alexismp-runner \
+    --member="serviceAccount:2500276981-compute@developer.gserviceaccount.com" \
+    --role="roles/storage.objectAdmin"
+
+gcloud projects add-iam-policy-binding alexismp-runner \
+    --member="serviceAccount:2500276981-compute@developer.gserviceaccount.com" \
+    --role="roles/aiplatform.user"
+```
+
 ## Fonctionnement
 
 1.  Un fichier image est téléchargé dans le bucket Cloud Storage d'entrée.
