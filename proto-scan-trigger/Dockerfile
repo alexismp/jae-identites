@@ -5,15 +5,15 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Copier les fichiers de dépendances du backend
-COPY proto-scan-trigger/backend/requirements.txt requirements.txt
+COPY backend/requirements.txt requirements.txt
 
 # Installer les dépendances
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copier tous les fichiers du projet (frontend et backend)
 # Le backend est à la racine, le frontend dans /app/static
-COPY proto-scan-trigger/backend/ /app/
-COPY proto-scan-trigger/static/ /app/static/
+COPY backend/ /app/
+COPY static/ /app/static/
 
 
 # Rendre le port 8080 disponible pour le monde extérieur
