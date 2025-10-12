@@ -15,9 +15,29 @@ JAE OCR est un service backend qui effectue la reconnaissance optique de caract�
 -   **Google Generative AI :** Le service d'IA utilisé pour l'extraction d'informations.
 -   **Google Cloud Storage :** Pour le stockage des images et des résultats.
 
-## Déploiement
+## Déploiement sur Cloud Run
 
-Ce service est conçu pour être déployé en tant que service Cloud Run, déclenché par des événements Cloud Storage.
+Après avoir construit l'image Docker localement, vous pouvez la déployer sur Cloud Run.
+
+1.  **Construire l'image Docker :**
+    ```bash
+    docker build -t jae-ocr .
+    ```
+
+2.  **Tagger l'image pour Artifact Registry :**
+    ```bash
+    docker tag jae-ocr:latest europe-west1-docker.pkg.dev/alexismp-runner/jae-identites-repo/jae-ocr:latest
+    ```
+
+3.  **Pousser l'image vers Artifact Registry :**
+    ```bash
+    docker push europe-west1-docker.pkg.dev/alexismp-runner/jae-identites-repo/jae-ocr:latest
+    ```
+
+4.  **Déployer sur Cloud Run :**
+    ```bash
+    gcloud run deploy jae-ocr --image europe-west1-docker.pkg.dev/alexismp-runner/jae-identites-repo/jae-ocr:latest --region europe-west1
+    ```
 
 ## Fonctionnement
 

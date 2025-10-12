@@ -1,7 +1,5 @@
 Flask
 Flask-Cors
-python-dotenv
-google-generativeai
 pillow
 gunicorn
 google-cloud-storage

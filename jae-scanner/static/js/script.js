@@ -116,24 +116,16 @@ function startApp() {
         resultsContainer.style.display = 'block';
 
         if (data.error) {
-            resultsContainer.innerHTML = `<p style="color: red;">Erreur d'extraction : ${data.error}</p>`;
-        } else {
-            let typeMessage = '';
-            if (data.type) {
-                const typeText = data.type.charAt(0).toUpperCase() + data.type.slice(1);
-                typeMessage = `<p style="font-weight: bold; color: blue;">Type: ${typeText}</p>`;
-            }
-
+            resultsContainer.innerHTML = `<p style="color: red;">Erreur : ${data.error}</p>`;
+        } else if (data.uploaded_file) {
              resultsContainer.innerHTML = `
-                <h3>Résultats de l'extraction</h3>
-                ${typeMessage}
-                <p><strong>Nom:</strong> ${data.prenom || 'N/A'} ${data.nom || 'N/A'}</p>
-                <p><strong>Licence:</strong> ${data.licence || 'N/A'}</p>
-                <p><strong>Validité:</strong> ${data.annee_validite || 'N/A'}</p>
-                <p><strong>Classement:</strong> ${data.classement || 'N/A'}</p>
-                <h3>Raw JSON:</h3>
-                <pre>${JSON.stringify(data, null, 2)}</pre>
+                <h3>Scan terminé</h3>
+                <p>Le fichier a été téléversé avec succès :</p>
+                <p><strong>${data.uploaded_file}</strong></p>
+                <p>Le traitement OCR est en cours...</p>
             `;
+        } else {
+            resultsContainer.innerHTML = `<p style="color: orange;">Réponse inattendue du serveur.</p>`;
         }
 
         isProcessing = false; // Permettre un nouveau scan si nécessaire

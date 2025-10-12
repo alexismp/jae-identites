@@ -1,15 +1,10 @@
 import os
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
-# from dotenv import load_dotenv
-# import google.generativeai as genai
 from PIL import Image
 import io
 from datetime import datetime
 from google.cloud import storage
-
-# Charger les variables d'environnement (pour la clé API)
-# load_dotenv()
 
 # Récupérer la version de l'application depuis les variables d'environnement
 APP_VERSION = os.getenv('APP_VERSION', 'development')
@@ -18,19 +13,6 @@ APP_VERSION = os.getenv('APP_VERSION', 'development')
 # et les templates depuis le dossier 'templates'
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
-
-# Configurer l'API Gemini
-# La clé est chargée depuis le fichier .env
-# Assurez-vous de créer un fichier .env à la racine de /backend avec :
-# GOOGLE_API_KEY="VOTRE_CLE_API_ICI"
-# try:
-#     api_key = os.getenv("GOOGLE_API_KEY")
-#     if not api_key:
-#         print("Avertissement : La variable d'environnement GOOGLE_API_KEY n'est pas définie.")
-#     genai.configure(api_key=api_key)
-# except Exception as e:
-#     print(f"Erreur lors de la configuration de l'API Gemini : {e}")
-
 
 @app.route('/')
 def index():
@@ -74,41 +56,8 @@ def scan_image():
                 # On ne bloque pas le flux principal si l'upload échoue, 
                 # mais on log l'erreur pour le débogage.
 
-            # À ce stade, l'image est prête à être envoyée à Gemini.
-            # Pour l'instant, nous confirmons simplement la réception.
             print(f"Image reçue: {file.filename}, format: {img.format}, taille: {img.size}")
 
-            # # Préparer le modèle et le prompt pour Gemini
-            # model = genai.GenerativeModel('gemini-2.5-flash')
-
-            # with open('prompt.txt', 'r') as f:
-            #     prompt = f.read()
-
-            # prompt_parts = [
-            #     img,
-            #     prompt
-            # ]
-
-            # # Générer le contenu
-            # response = model.generate_content(prompt_parts, generation_config=genai.types.GenerationConfig(temperature=0.2))
-
-            # # Extraire et nettoyer la réponse JSON
-            # response_text = response.text.strip()
-
-            # # S'assurer que la réponse est bien du JSON
-            # try:
-            #     # On retire les potentiels démarqueurs de code block
-            #     if response_text.startswith("```json"):
-            #         response_text = response_text[7:]
-            #     if response_text.endswith("```"):
-            #         response_text = response_text[:-3]
-
-            #     import json
-            #     json_data = json.loads(response_text)
-            #     return jsonify(json_data)
-            # except json.JSONDecodeError:
-            #     print(f"Erreur: La réponse de Gemini n'est pas un JSON valide. Réponse reçue:\n{response.text}")
-            #     return jsonify({"error": "Erreur lors de l'analyse de la réponse du modèle IA.", "raw_response": response.text}), 500
             return jsonify({"uploaded_file": unique_filename})
 
         except Exception as e:

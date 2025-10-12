@@ -44,6 +44,25 @@ JAE Scanner est une application web qui numérise des documents (pièces d'ident
 3.  **Accéder à l'application :**
     -   Ouvrez votre navigateur web et accédez à `http://localhost:8080`.
 
+## Déploiement sur Cloud Run
+
+Après avoir construit l'image Docker localement, vous pouvez la déployer sur Cloud Run.
+
+1.  **Tagger l'image pour Artifact Registry :**
+    ```bash
+    docker tag jae-scanner:latest europe-west1-docker.pkg.dev/alexismp-runner/jae-identites-repo/jae-scanner:latest
+    ```
+
+2.  **Pousser l'image vers Artifact Registry :**
+    ```bash
+    docker push europe-west1-docker.pkg.dev/alexismp-runner/jae-identites-repo/jae-scanner:latest
+    ```
+
+3.  **Déployer sur Cloud Run :**
+    ```bash
+    gcloud run deploy jae-scanner --image europe-west1-docker.pkg.dev/alexismp-runner/jae-identites-repo/jae-scanner:latest --region europe-west1
+    ```
+
 ## Fonctionnement
 
 1.  L'utilisateur pointe l'appareil photo de son appareil vers un document.
