@@ -35,17 +35,37 @@ def index():
     try:
         bucket_name = envelope["bucket"]
         file_name = envelope["name"]
+        
+        # Vérifier l'existence d'un fichier .LOCK
+        destination_bucket_name = "jae-scan-results"
+        lock_filename = f"{file_name}.LOCK"
+        destination_bucket = storage_client.bucket(destination_bucket_name)
+        lock_blob = destination_bucket.blob(lock_filename)
+
+        if lock_blob.exists():
+            print(f"Lock file {lock_filename} exists. Skipping.")
+            return "", 204
+
         handle_storage_event(bucket_name, file_name)
+
         return "", 204
     except Exception as e:
         print(f"Erreur lors du traitement du message : {e}")
         return "", 500
 
 def handle_storage_event(bucket_name, file_name):
-    print(f"Service triggered by file: {file_name} in bucket: {bucket_name}")
     print(f"Fichier {file_name} uploadé dans le bucket {bucket_name}.")
+    
+    destination_bucket_name = "jae-scan-results"
+    lock_filename = f"{file_name}.LOCK"
+    destination_bucket = storage_client.bucket(destination_bucket_name)
+    lock_blob = destination_bucket.blob(lock_filename)
 
     try:
+        # Créer le fichier .LOCK
+        lock_blob.upload_from_string('')
+        print(f"Created lock file: {lock_filename}")
+
         # Télécharger l'image depuis le bucket source
         source_bucket = storage_client.bucket(bucket_name)
         blob = source_bucket.blob(file_name)
@@ -86,20 +106,21 @@ def handle_storage_event(bucket_name, file_name):
             first_name = json_data.get("prenom", "unknown")
             last_name = json_data.get("nom", "unknown")
             doc_type = json_data.get("type", "unknown")
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            # timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
             # Construire le nom de fichier avec le préfixe approprié
             if doc_type.lower() == "licence":
                 prefix = "LIC"
             elif doc_type.lower() == "identite":
-                prefix = "PID"
+                prefix = "PID"  # Pièce IDentité
             else:
                 prefix = "UNKNOWN"
             
-            result_filename = f"{prefix}_{first_name}-{last_name}-{timestamp}.json"
+            # result_filename = f"{prefix}_{first_name}-{last_name}-{timestamp}.json"
+            result_filename = f"{prefix}_{first_name}-{last_name}.json"
 
             # Uploader le résultat JSON dans le bucket de destination
-            destination_bucket_name = "jae-scan-results"
+            destination_bucket_name = "jae-scan-results"    # Need to make this a parameter
             destination_bucket = storage_client.bucket(destination_bucket_name)
             result_blob = destination_bucket.blob(result_filename)
             print(f"Uploading JSON file {result_filename} to bucket {destination_bucket_name}...")
@@ -115,8 +136,8 @@ def handle_storage_event(bucket_name, file_name):
 
     except Exception as e:
         print(f"Erreur lors du traitement de l'image {file_name} : {e}")
-
-if __name__ == '__main__':
-    # Le port est défini par Cloud Run via la variable d'environnement PORT
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
+    finally:
+        # Supprimer le fichier .LOCK
+        if lock_blob.exists():
+            print(f"Deleting lock file: {lock_filename}")
+            lock_blob.delete()
