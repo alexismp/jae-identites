@@ -1,15 +1,15 @@
 import os
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
-from dotenv import load_dotenv
-import google.generativeai as genai
+# from dotenv import load_dotenv
+# import google.generativeai as genai
 from PIL import Image
 import io
 from datetime import datetime
 from google.cloud import storage
 
 # Charger les variables d'environnement (pour la clé API)
-load_dotenv()
+# load_dotenv()
 
 # Récupérer la version de l'application depuis les variables d'environnement
 APP_VERSION = os.getenv('APP_VERSION', 'development')
@@ -23,13 +23,13 @@ CORS(app)
 # La clé est chargée depuis le fichier .env
 # Assurez-vous de créer un fichier .env à la racine de /backend avec :
 # GOOGLE_API_KEY="VOTRE_CLE_API_ICI"
-try:
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        print("Avertissement : La variable d'environnement GOOGLE_API_KEY n'est pas définie.")
-    genai.configure(api_key=api_key)
-except Exception as e:
-    print(f"Erreur lors de la configuration de l'API Gemini : {e}")
+# try:
+#     api_key = os.getenv("GOOGLE_API_KEY")
+#     if not api_key:
+#         print("Avertissement : La variable d'environnement GOOGLE_API_KEY n'est pas définie.")
+#     genai.configure(api_key=api_key)
+# except Exception as e:
+#     print(f"Erreur lors de la configuration de l'API Gemini : {e}")
 
 
 @app.route('/')
