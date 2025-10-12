@@ -1,6 +1,6 @@
-# Proto-Scan
+# JAE Scanner
 
-Proto-Scan is a web application that scans French Tennis Federation (FFT) licenses using a device's camera. It automatically detects a clear image, extracts the license information using AI, and displays it to the user.
+JAE Scanner is a web application that scans French Tennis Federation (FFT) licenses using a device's camera. It automatically detects a clear image, extracts the license information using AI, and displays it to the user.
 
 ## Features
 
@@ -42,7 +42,7 @@ Proto-Scan is a web application that scans French Tennis Federation (FFT) licens
 1.  **Clone the repository:**
     ```bash
     git clone https://github.com/your-username/jae-identites.git
-    cd jae-identites/proto-scan
+    cd jae-identites/jae-scanner
     ```
 2.  **Create a `.env` file:**
     -   In the `backend` directory, create a file named `.env`.
@@ -52,8 +52,8 @@ Proto-Scan is a web application that scans French Tennis Federation (FFT) licens
         ```
 3.  **Build and run the Docker container:**
     ```bash
-    docker build -t proto-scan .
-    docker run -p 8080:8080 proto-scan
+    docker build -t jae-scanner .
+    docker run -p 8080:8080 jae-scanner
     ```
 4.  **Access the application:**
     -   Open your web browser and navigate to `http://localhost:8080`.
