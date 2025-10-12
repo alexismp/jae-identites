@@ -10,10 +10,8 @@ COPY backend/requirements.txt requirements.txt
 # Installer les dépendances
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copier tous les fichiers du projet (frontend et backend)
-# Le backend est à la racine, le frontend dans /app/static
+# Copier les fichiers du backend
 COPY backend/ /app/
-COPY static/ /app/static/
 
 
 # Rendre le port 8080 disponible pour le monde extérieur
