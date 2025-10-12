@@ -7,19 +7,21 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <h1>JAE Scan</h1>
     <div id="main-container">
-        <div id="scanner-container">
-            <div id="video-wrapper">
-                <video id="video" playsinline></video>
+        <h1>JAE Scan</h1>
+        <div class="scanner-row">
+            <div id="scanner-container">
+                <div id="video-wrapper">
+                    <video id="video" playsinline></video>
+                </div>
+                <img id="frozen-image" src="" alt="Frozen Image" style="display: none;">
+                <div id="overlay">
+                    <div class="scan-guide"></div>
+                </div>
+                <div id="scanner-message"></div>
             </div>
-            <img id="frozen-image" src="" alt="Frozen Image" style="display: none;">
-            <div id="overlay">
-                <div class="scan-guide"></div>
-            </div>
-            <div id="scanner-message"></div>
+            <button id="manual-capture-button">Scan</button>
         </div>
-        <button id="manual-capture-button">Scan</button>
     </div>
     <div id="orientation-message" style="display: none;">
         <p>Veuillez tourner votre appareil en mode paysage.</p>
