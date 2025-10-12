@@ -1,68 +1,52 @@
 # JAE Scanner
 
-JAE Scanner is a web application that scans French Tennis Federation (FFT) licenses using a device's camera. It automatically detects a clear image, extracts the license information using AI, and displays it to the user.
+JAE Scanner est une application web qui numérise des documents (pièces d'identités ou licences) à l'aide de l'appareil photo d'un appareil et les télécharge pour traitement.
 
-## Features
+## Fonctionnalités
 
--   **Camera-based scanning:** Uses the device's camera to capture an image of the license.
--   **AI-powered information extraction:** Employs the Google Gemini AI to extract the following information from the license image:
-    -   Last Name
-    -   First Name
-    -   License Number
-    -   Year of Validity
-    -   Tennis Ranking
--   **Real-time results:** Displays the extracted information to the user on the web interface.
+-   **Numérisation par appareil photo :** Utilise l'appareil photo de l'appareil pour capturer une image du document.
+-   **Téléchargement d'images :** Télécharge l'image capturée dans un bucket Google Cloud Storage.
 
-## Technologies Used
+## Technologies utilisées
 
 ### Backend
 
--   **Python:** The core language for the backend.
--   **Flask:** A lightweight web framework for Python.
--   **Google Generative AI:** The AI service used for information extraction.
--   **Gunicorn:** A Python WSGI HTTP server for UNIX.
+-   **Python :** Le langage principal pour le backend.
+-   **Flask :** Un framework web léger pour Python.
+-   **Gunicorn :** Un serveur HTTP WSGI Python pour UNIX.
 
 ### Frontend
 
--   **HTML/CSS/JavaScript:** The standard trio for web development.
+-   **HTML/CSS/JavaScript :** Le trio standard pour le développement web.
 
-### Containerization
+### Conteneurisation
 
--   **Docker:** The application is containerized for easy deployment.
+-   **Docker :** L'application est conteneurisée pour un déploiement facile.
 
-## Getting Started
+## Démarrage
 
-### Prerequisites
+### Prérequis
 
 -   Docker
--   A Google API key with access to the Gemini API.
 
 ### Installation
 
-1.  **Clone the repository:**
+1.  **Cloner le dépôt :**
     ```bash
     git clone https://github.com/your-username/jae-identites.git
     cd jae-identites/jae-scanner
     ```
-2.  **Create a `.env` file:**
-    -   In the `backend` directory, create a file named `.env`.
-    -   Add your Google API key to the `.env` file as follows:
-        ```
-        GOOGLE_API_KEY="YOUR_GOOGLE_API_KEY"
-        ```
-3.  **Build and run the Docker container:**
+2.  **Construire et lancer le conteneur Docker :**
     ```bash
     docker build -t jae-scanner .
     docker run -p 8080:8080 jae-scanner
     ```
-4.  **Access the application:**
-    -   Open your web browser and navigate to `http://localhost:8080`.
+3.  **Accéder à l'application :**
+    -   Ouvrez votre navigateur web et accédez à `http://localhost:8080`.
 
-## How it Works
+## Fonctionnement
 
-1.  The user points their device's camera at the FFT license.
-2.  Once a clear image is detected, it is captured and sent to the Flask backend.
-4.  The backend receives the image and sends it to the Google Gemini AI with a prompt to extract the relevant information.
-5.  The AI returns the extracted data in JSON format.
-6.  The backend sends the JSON data to the frontend.
-7.  The frontend displays the extracted information to the user.
+1.  L'utilisateur pointe l'appareil photo de son appareil vers un document.
+2.  Une fois qu'une image nette est détectée, elle est capturée et envoyée au backend Flask.
+3.  Le backend reçoit l'image et la télécharge dans un bucket Google Cloud Storage.
+4.  Le backend retourne une confirmation avec le nom du fichier téléchargé.

@@ -1,30 +1,32 @@
-# JAE Identities
+# JAE Identités
 
-This project contains two main modules for scanning and processing identity documents and licenses.
+JAE Scan est une application web qui fonctionne sur téléphone portable pour permettre aux Juges-Arbitres par Équipe (JAE) de vérifier les identités et les licences des joueurs qui participent à une rencontre par équipe.
+
+Ce projet contient deux modules principaux pour la numérisation et le traitement de documents d'identité et de licences.
 
 ## Modules
 
 ### 1. JAE Scanner (`jae-scanner`)
 
-This module is a web-based front-end designed to capture images of documents using a device's camera.
+Ce module est une interface web front-end conçue pour capturer des images de documents à l'aide de l'appareil photo d'un appareil.
 
--   **Functionality**: Provides a user interface in the browser to scan documents.
--   **Technology**: Built with Python, Flask, and standard front-end technologies (HTML, CSS, JavaScript).
--   **Output**: Uploads the captured image to a Google Cloud Storage bucket for processing.
+-   **Fonctionnalité** : Fournit une interface utilisateur dans le navigateur pour numériser des documents (pièces d'identités ou licences)
+-   **Technologie** : Développé avec Python, Flask et des technologies front-end standard (HTML, CSS, JavaScript).
+-   **Sortie** : Télécharge l'image capturée dans un bucket Google Cloud Storage pour traitement.
 
 ### 2. JAE OCR (`jae-ocr`)
 
-This module is a backend service that performs Optical Character Recognition (OCR) on the documents uploaded by the JAE Scanner.
+Ce module est un service backend qui effectue la reconnaissance optique de caractères (OCR) sur les documents téléchargés par le JAE Scanner.
 
--   **Functionality**:
-    -   Triggered by new image uploads to a specific Google Cloud Storage bucket.
-    -   Uses the Google Gemini API to extract text and relevant information from the document image.
-    -   Saves the extracted data as a structured JSON file in a separate results bucket.
--   **Technology**: A Python-based service that leverages the Google Gemini AI.
+-   **Fonctionnalité** :
+    -   Déclenché par le téléchargement de nouvelles images dans un bucket Google Cloud Storage spécifique.
+    -   Utilise l'API Google Gemini pour extraire le texte et les informations pertinentes de l'image du document.
+    -   Enregistre les données extraites sous forme de fichier JSON structuré dans un bucket de résultats distinct.
+-   **Technologie** : Un service basé sur Python qui s'appuie sur l'IA de Google Gemini.
 
-## Workflow
+## Flux de travail
 
-1.  The user accesses the **JAE Scanner** web interface and scans a document.
-2.  The captured image is uploaded to a Cloud Storage bucket.
-3.  The upload triggers the **JAE OCR** service.
-4.  **JAE OCR** processes the image with Gemini, extracts the data, and saves the resulting JSON to another Cloud Storage bucket.
+1.  L'utilisateur accède à l'interface web du **JAE Scanner** et numérise un document.
+2.  L'image capturée est téléchargée dans un bucket Cloud Storage.
+3.  Le téléchargement déclenche le service **JAE OCR**.
+4.  **JAE OCR** traite l'image avec Gemini, extrait les données et enregistre le JSON résultant dans un autre bucket Cloud Storage.
