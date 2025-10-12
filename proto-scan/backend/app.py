@@ -11,6 +11,9 @@ from google.cloud import storage
 # Charger les variables d'environnement (pour la clé API)
 load_dotenv()
 
+# Récupérer la version de l'application depuis les variables d'environnement
+APP_VERSION = os.getenv('APP_VERSION', 'development')
+
 # Initialiser Flask pour servir les fichiers statiques depuis le dossier 'static'
 # et les templates depuis le dossier 'templates'
 app = Flask(__name__, static_folder='static', template_folder='templates')
@@ -31,7 +34,7 @@ except Exception as e:
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', app_version=APP_VERSION)
 
 @app.route('/scan', methods=['POST'])
 def scan_image():
@@ -47,6 +50,7 @@ def scan_image():
         try:
             # Lire l'image en mémoire
             img_bytes = file.read()
+            print(f"Taille du fichier '''{file.filename}''' reçu : {len(img_bytes)} bytes")
             img = Image.open(io.BytesIO(img_bytes))
 
             # Uploader l'image sur Google Cloud Storage

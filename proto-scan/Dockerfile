@@ -4,6 +4,10 @@ FROM python:3.10-slim
 # Définir le répertoire de travail dans le conteneur
 WORKDIR /app
 
+# Définir l'argument de build pour la version
+ARG BUILD_VERSION
+ENV APP_VERSION=$BUILD_VERSION
+
 # Copier les fichiers de dépendances du backend
 COPY backend/requirements.txt requirements.txt
 

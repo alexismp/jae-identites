@@ -85,8 +85,18 @@ def handle_storage_event(bucket_name, file_name):
             # Extraire le prénom et le nom de famille pour le nom du fichier
             first_name = json_data.get("prenom", "unknown")
             last_name = json_data.get("nom", "unknown")
+            doc_type = json_data.get("type", "unknown")
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            result_filename = f"{first_name}-{last_name}-{timestamp}.json"
+
+            # Construire le nom de fichier avec le préfixe approprié
+            if doc_type.lower() == "licence":
+                prefix = "LIC"
+            elif doc_type.lower() == "identite":
+                prefix = "PID"
+            else:
+                prefix = "UNKNOWN"
+            
+            result_filename = f"{prefix}_{first_name}-{last_name}-{timestamp}.json"
 
             # Uploader le résultat JSON dans le bucket de destination
             destination_bucket_name = "jae-scan-results"

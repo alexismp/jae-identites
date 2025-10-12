@@ -55,37 +55,18 @@ function startApp() {
     }
 
     function captureAndSend() {
-        const videoWrapper = document.getElementById('video-wrapper');
         const canvas = document.createElement('canvas');
-        canvas.width = videoWrapper.clientWidth;
-        canvas.height = videoWrapper.clientHeight;
+        // Utiliser la résolution native de la vidéo pour une qualité maximale
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
         const context = canvas.getContext('2d');
 
-        const videoAspectRatio = video.videoWidth / video.videoHeight;
-        const canvasAspectRatio = canvas.width / canvas.height;
-        let renderableHeight, renderableWidth, xStart, yStart;
-
-        if (videoAspectRatio < canvasAspectRatio) {
-            renderableHeight = canvas.height;
-            renderableWidth = renderableHeight * videoAspectRatio;
-            xStart = (canvas.width - renderableWidth) / 2;
-            yStart = 0;
-        } else if (videoAspectRatio > canvasAspectRatio) {
-            renderableWidth = canvas.width;
-            renderableHeight = renderableWidth / videoAspectRatio;
-            xStart = 0;
-            yStart = (canvas.height - renderableHeight) / 2;
-        } else {
-            renderableHeight = canvas.height;
-            renderableWidth = canvas.width;
-            xStart = 0;
-            yStart = 0;
-        }
-
-        context.drawImage(video, xStart, yStart, renderableWidth, renderableHeight);
+        // Dessiner l'image entière de la vidéo sur le canvas
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
         const frozenImage = document.getElementById('frozen-image');
-        frozenImage.src = canvas.toDataURL('image/jpeg');
+        // Mettre à jour l'image affichée (peut être de moindre qualité pour l'affichage si nécessaire)
+        frozenImage.src = canvas.toDataURL('image/jpeg', 1.0);
 
         video.style.display = 'none';
         frozenImage.style.display = 'block';
@@ -94,6 +75,7 @@ function startApp() {
         stream.getTracks().forEach(track => track.stop());
         video.srcObject = null;
 
+        // Envoyer l'image en haute qualité au serveur
         canvas.toBlob(async (blob) => {
             console.log(`Image capturée, taille: ${Math.round(blob.size / 1024)} KB. Envoi au serveur...`);
 
