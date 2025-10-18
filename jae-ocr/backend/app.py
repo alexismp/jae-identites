@@ -6,6 +6,11 @@ import google.generativeai as genai
 from PIL import Image
 import io
 from datetime import datetime
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+
 
 def normalize_name(name):
     return name.replace(' ', '').replace('-', '').lower() if name else ''
@@ -19,10 +24,10 @@ try:
     # GOOGLE_API_KEY est normalement défini dans l'environnement Cloud Run
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        print("Avertissement : La variable d'environnement GOOGLE_API_KEY n'est pas définie.")
+        logging.warning("Avertissement : La variable d'environnement GOOGLE_API_KEY n'est pas définie.")
     genai.configure(api_key=api_key)
 except Exception as e:
-    print(f"Erreur lors de la configuration de l'API Gemini : {e}")
+    logging.error(f"Erreur lors de la configuration de l'API Gemini : {e}")
 
 # Initialiser le client Google Cloud Storage
 storage_client = storage.Client()
@@ -33,7 +38,7 @@ def index():
     envelope = request.get_json()
     if not envelope:
         msg = "no Pub/Sub message received"
-        print(f"error: {msg}")
+        logging.error(f"error: {msg}")
         return f"Bad Request: {msg}", 400
 
     try:
@@ -47,18 +52,18 @@ def index():
         lock_blob = destination_bucket.blob(lock_filename)
 
         if lock_blob.exists():
-            print(f"Lock file {lock_filename} exists. Skipping.")
+            logging.info(f"Lock file {lock_filename} exists. Skipping.")
             return "", 204
 
         handle_storage_event(bucket_name, file_name)
 
         return "", 204
     except Exception as e:
-        print(f"Erreur lors du traitement du message : {e}")
+        logging.error(f"Erreur lors du traitement du message : {e}")
         return "", 500
 
 def handle_storage_event(bucket_name, file_name):
-    print(f"Fichier {file_name} uploadé dans le bucket {bucket_name}.")
+    logging.info(f"Fichier {file_name} uploadé dans le bucket {bucket_name}.")
     
     destination_bucket_name = "jae-scan-results"
     lock_filename = f"{file_name}.LOCK"
@@ -68,7 +73,7 @@ def handle_storage_event(bucket_name, file_name):
     try:
         # Créer le fichier .LOCK
         lock_blob.upload_from_string('')
-        print(f"Created lock file: {lock_filename}")
+        logging.info(f"Created lock file: {lock_filename}")
 
         # Télécharger l'image depuis le bucket source
         source_bucket = storage_client.bucket(bucket_name)
@@ -76,7 +81,7 @@ def handle_storage_event(bucket_name, file_name):
         img_bytes = blob.download_as_bytes()
         img = Image.open(io.BytesIO(img_bytes))
 
-        print(f"Image {file_name} téléchargée et prête pour l'analyse.")
+        logging.info(f"Image {file_name} téléchargée et prête pour l'analyse.")
 
         # Préparer le modèle et le prompt pour Gemini
         model = genai.GenerativeModel('gemini-2.5-flash')
@@ -90,9 +95,9 @@ def handle_storage_event(bucket_name, file_name):
         ]
 
         # Générer le contenu
-        print("Sending request to Gemini API...")
+        logging.info("Sending request to Gemini API...")
         response = model.generate_content(prompt_parts, generation_config=genai.types.GenerationConfig(temperature=0.2))
-        print("Received response from Gemini API.")
+        logging.info("Received response from Gemini API.")
 
         # Extraire et nettoyer la réponse JSON
         response_text = response.text.strip()
@@ -121,29 +126,29 @@ def handle_storage_event(bucket_name, file_name):
                 prefix = "UNKNOWN"
             
             # result_filename = f"{prefix}_{first_name}-{last_name}-{timestamp}.json"
-            result_filename = f"{prefix}_{first_name}-{last_name}.json"
+            result_filename = f"{prefix}_{first_name}_{last_name}.json"
 
             # Uploader le résultat JSON dans le bucket de destination
             destination_bucket_name = "jae-scan-results"    # Need to make this a parameter
             destination_bucket = storage_client.bucket(destination_bucket_name)
             result_blob = destination_bucket.blob(result_filename)
-            print(f"Uploading JSON file {result_filename} to bucket {destination_bucket_name}...")
+            logging.info(f"Uploading JSON file {result_filename} to bucket {destination_bucket_name}...")
             result_blob.upload_from_string(json.dumps(json_data, indent=4), content_type='application/json')
-            print("JSON file uploaded successfully.")
+            logging.info("JSON file uploaded successfully.")
 
-            print(f"Résultat JSON sauvegardé sous {result_filename} dans {destination_bucket_name}")
+            logging.info(f"Résultat JSON sauvegardé sous {result_filename} dans {destination_bucket_name}")
 
         except json.JSONDecodeError:
-            print(f"Erreur: La réponse de Gemini n'est pas un JSON valide. Réponse reçue:\n{response.text}")
+            logging.error(f"Erreur: La réponse de Gemini n'est pas un JSON valide. Réponse reçue:\n{response.text}")
         except Exception as e:
-            print(f"Erreur lors de la sauvegarde du résultat JSON : {e}")
+            logging.error(f"Erreur lors de la sauvegarde du résultat JSON : {e}")
 
     except Exception as e:
-        print(f"Erreur lors du traitement de l'image {file_name} : {e}")
+        logging.error(f"Erreur lors du traitement de l'image {file_name} : {e}")
     finally:
         # Supprimer le fichier .LOCK
         if lock_blob.exists():
-            print(f"Deleting lock file: {lock_filename}")
+            logging.info(f"Deleting lock file: {lock_filename}")
             lock_blob.delete()
 
 @app.route('/', methods=['GET'])
@@ -173,15 +178,26 @@ def serve_page():
     for blob in blobs:
         if blob.name.startswith('PID_') and blob.name.endswith('.json'):
             # Assuming PID filename format is PID_PRENOM-NOM.json
-            parts = blob.name.replace('PID_', '').replace('.json', '').split('-')
+            parts = blob.name.replace('PID_', '').replace('.json', '').split('_')
             if len(parts) == 2:
-                prenom, nom = parts
-                normalized_prenom = normalize_name(prenom)
-                normalized_nom = normalize_name(nom)
+                prenom_pid, nom_pid = parts
+                logging.info(f"PID file: Original prenom='{prenom_pid}', nom='{nom_pid}'")
+                normalized_prenom_pid = normalize_name(prenom_pid)
+                normalized_nom_pid = normalize_name(nom_pid)
+                logging.info(f"PID file: Normalized prenom='{normalized_prenom_pid}', nom='{normalized_nom_pid}'")
                 for lic, participant in participants.items():
-                    if normalize_name(participant['prenom']) == normalized_prenom and normalize_name(participant['nom']) == normalized_nom:
+                    prenom_lic = participant['prenom']
+                    nom_lic = participant['nom']
+                    normalized_prenom_lic = normalize_name(prenom_lic)
+                    normalized_nom_lic = normalize_name(nom_lic)
+                    logging.info(f"  LIC participant: Original prenom='{prenom_lic}', nom='{nom_lic}'")
+                    logging.info(f"  LIC participant: Normalized prenom='{normalized_prenom_lic}', nom='{normalized_nom_lic}'")
+                    if normalized_prenom_lic == normalized_prenom_pid and normalized_nom_lic == normalized_nom_pid:
+                        logging.info(f"  Match found for {prenom_lic} {nom_lic}")
                         participant['id_checked'] = True
                         break
+                    else:
+                        logging.info(f"  No match for {prenom_lic} {nom_lic}")
 
     return render_template('index.html', participants=list(participants.values()))
 
