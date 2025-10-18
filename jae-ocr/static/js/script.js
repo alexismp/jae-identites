@@ -1,15 +1,28 @@
 document.addEventListener('DOMContentLoaded', function () {
-    // Set page title and H1 to "rencontre du $DATE"
-    var today = new Date();
-    var options = { year: 'numeric', month: 'long', day: 'numeric' };
-    var formattedDate = today.toLocaleDateString('fr-FR', options);
-    var titleText = "Rencontre du " + formattedDate;
-
-    document.title = titleText;
     var h1Element = document.querySelector('h1');
-    if (h1Element) {
-        h1Element.textContent = titleText;
+    var team1Title = document.querySelector('#team1').previousElementSibling;
+    var team2Title = document.querySelector('#team2').previousElementSibling;
+
+    function updateH1() {
+        var today = new Date();
+        var options = { year: 'numeric', month: 'long', day: 'numeric' };
+        var formattedDate = today.toLocaleDateString('fr-FR', options);
+        var team1Name = team1Title.textContent.trim();
+        var team2Name = team2Title.textContent.trim();
+        var titleText = "Rencontre du " + formattedDate + " - " + team1Name + " vs. " + team2Name;
+
+        document.title = titleText;
+        if (h1Element) {
+            h1Element.textContent = titleText;
+        }
     }
+
+    // Initial update
+    updateH1();
+
+    // Add event listeners to team titles
+    team1Title.addEventListener('input', updateH1);
+    team2Title.addEventListener('input', updateH1);
 
     var officials = document.getElementById('officials');
     var team1 = document.getElementById('team1');
@@ -36,6 +49,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     var teamTitle = to.previousElementSibling; // The h2 element
                     if (teamTitle && teamTitle.tagName === 'H2') {
                         teamTitle.textContent = clubName;
+                        updateH1(); // Update H1 after team name changes
                     }
                 }
             }
@@ -57,6 +71,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     var teamTitle = to.previousElementSibling; // The h2 element
                     if (teamTitle && teamTitle.tagName === 'H2') {
                         teamTitle.textContent = clubName;
+                        updateH1(); // Update H1 after team name changes
                     }
                 }
             }
