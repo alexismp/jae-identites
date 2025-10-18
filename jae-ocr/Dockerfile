@@ -13,6 +13,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copier les fichiers du backend
 COPY backend/ /app/
 
+# Copier les fichiers statiques
+COPY static/ /app/static/
+
 
 # Rendre le port 8080 disponible pour le monde extérieur
 EXPOSE 8080
@@ -22,4 +25,4 @@ ENV PORT=8080
 
 # Commande pour lancer l'application avec Gunicorn
 # Le nombre de workers est une recommandation générale.
-CMD exec gunicorn --enable-stdio-inheritance --bind :$PORT --workers 1 --threads 8 --timeout 0 app:app
+CMD gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 --log-level=debug app:app

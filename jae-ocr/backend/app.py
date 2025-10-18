@@ -1,11 +1,15 @@
 import os
 import json
-from flask import Flask, request
+from flask import Flask, request, render_template
 from google.cloud import storage
 import google.generativeai as genai
 from PIL import Image
 import io
 from datetime import datetime
+
+def normalize_name(name):
+    return name.replace(' ', '').replace('-', '').lower() if name else ''
+
 
 # Initialiser Flask
 app = Flask(__name__)
@@ -141,3 +145,45 @@ def handle_storage_event(bucket_name, file_name):
         if lock_blob.exists():
             print(f"Deleting lock file: {lock_filename}")
             lock_blob.delete()
+
+@app.route('/', methods=['GET'])
+def serve_page():
+    participants = {}
+    bucket_name = "jae-scan-results"
+    bucket = storage_client.bucket(bucket_name)
+    blobs = bucket.list_blobs()
+
+    for blob in blobs:
+        if blob.name.startswith('LIC_') and blob.name.endswith('.json'):
+            data = json.loads(blob.download_as_string())
+            license_no = data.get("licence")
+            if license_no:
+                participants[license_no] = {
+                    "nom": data.get("nom"),
+                    "prenom": data.get("prenom"),
+                    "licence": license_no,
+                    "annee_validite": data.get("annee_validite"),
+                    "classement": data.get("classement"),
+                    "club": data.get("club"),
+                    "statut": data.get("statut"),
+                    "id_checked": False
+                }
+
+    blobs = bucket.list_blobs() # Re-list to iterate again
+    for blob in blobs:
+        if blob.name.startswith('PID_') and blob.name.endswith('.json'):
+            # Assuming PID filename format is PID_PRENOM-NOM.json
+            parts = blob.name.replace('PID_', '').replace('.json', '').split('-')
+            if len(parts) == 2:
+                prenom, nom = parts
+                normalized_prenom = normalize_name(prenom)
+                normalized_nom = normalize_name(nom)
+                for lic, participant in participants.items():
+                    if normalize_name(participant['prenom']) == normalized_prenom and normalize_name(participant['nom']) == normalized_nom:
+                        participant['id_checked'] = True
+                        break
+
+    return render_template('index.html', participants=list(participants.values()))
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))

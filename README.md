@@ -24,6 +24,18 @@ Ce module est un service backend qui effectue la reconnaissance optique de carac
     -   Enregistre les données extraites sous forme de fichier JSON structuré dans un bucket de résultats distinct.
 -   **Technologie** : Un service basé sur Python qui s'appuie sur l'IA de Google Gemini.
 
+#### Page de gestion de la rencontre
+
+Le module `jae-ocr` inclut désormais une page web accessible à la racine du service pour gérer la rencontre. Cette page offre les fonctionnalités suivantes :
+
+-   **Titre de la rencontre modifiable** : Le titre de la page est "Rencontre du [Date du jour]" par défaut et peut être modifié.
+-   **Sections pour les officiels et les équipes** : La page est divisée en sections pour les officiels, deux équipes et une section pour les fiches non-affectées.
+-   **Gestion des fiches de participants** :
+    -   Les fiches des participants sont créées à partir des fichiers `LIC_*.json` trouvés dans le bucket `jae-scan-results`.
+    -   Les fiches peuvent être déplacées par glisser-déposer entre les différentes sections.
+    -   Le nom des équipes est automatiquement mis à jour avec le nom du club du premier participant ajouté à l'équipe.
+-   **Vérification des pièces d'identité** : Une case à cocher sur chaque fiche indique si la pièce d'identité a été présentée. Cette case est automatiquement cochée si un fichier `PID_*.json` correspondant est trouvé.
+
 ## Flux de travail
 
 1.  L'utilisateur accède à l'interface web du **JAE Scanner** et numérise un document.
