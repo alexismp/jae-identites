@@ -1,3 +1,5 @@
+**Note importante :** Ce projet est un développement personnel et n'est en aucun cas affilié à la Fédération Française de Tennis (FFT). L'objectif de cet outil est uniquement de proposer une solution pour la phase de vérification des identités lors des rencontres par équipe.
+
 # JAE Identités
 
 JAE Scan est une application web qui fonctionne sur téléphone portable pour permettre aux Juges-Arbitres par Équipe (JAE) de vérifier les identités et les licences des joueurs qui participent à une rencontre par équipe.
