@@ -110,6 +110,7 @@ def handle_storage_event(bucket_name, file_name):
                 response_text = response_text[:-3]
 
             json_data = json.loads(response_text)
+            json_data['image_uri'] = f'gs://{bucket_name}/{file_name}'
             
             # Extraire le prénom et le nom de famille pour le nom du fichier
             first_name = json_data.get("prenom", "unknown")
@@ -157,12 +158,27 @@ def serve_page():
     bucket_name = "jae-scan-results"
     bucket = storage_client.bucket(bucket_name)
     blobs = bucket.list_blobs()
+    debug_mode = request.args.get('debug', 'false').lower() == 'true'
 
     for blob in blobs:
         if blob.name.startswith('LIC_') and blob.name.endswith('.json'):
             data = json.loads(blob.download_as_string())
             license_no = data.get("licence")
             if license_no:
+                image_uri = data.get("image_uri")
+                http_url = None
+                if not image_uri:
+                    logging.error(f"Image URI not found in JSON data for license {license_no}.")
+                else:
+                    # Convert gs:// URI to https://storage.cloud.google.com/ URL
+                    parts = image_uri.split('/')
+                    if len(parts) >= 4 and parts[0] == 'gs:':
+                        image_bucket_name = parts[2]
+                        image_file_name = '/'.join(parts[3:])
+                        http_url = f'https://storage.cloud.google.com/{image_bucket_name}/{image_file_name}'
+                    else:
+                        logging.error(f"Invalid image URI format: {image_uri}")
+
                 participants[license_no] = {
                     "nom": data.get("nom"),
                     "prenom": data.get("prenom"),
@@ -171,7 +187,8 @@ def serve_page():
                     "classement": data.get("classement"),
                     "club": data.get("club"),
                     "statut": data.get("statut"),
-                    "id_checked": False
+                    "id_checked": False,
+                    "image_uri": http_url
                 }
 
     blobs = bucket.list_blobs() # Re-list to iterate again
@@ -199,7 +216,7 @@ def serve_page():
                     else:
                         logging.info(f"  No match for {prenom_lic} {nom_lic}")
 
-    return render_template('index.html', participants=list(participants.values()))
+    return render_template('index.html', participants=list(participants.values()), debug=debug_mode)
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))

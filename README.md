@@ -44,3 +44,7 @@ Le module `jae-ocr` inclut désormais une page web accessible à la racine du se
 2.  L'image capturée est téléchargée dans un bucket Cloud Storage.
 3.  Le téléchargement déclenche le service **JAE OCR**.
 4.  **JAE OCR** traite l'image avec Gemini, extrait les données et enregistre le JSON résultant dans un autre bucket Cloud Storage.
+
+### Gestion des doublons
+
+**Important :** Si vous numérisez deux fois la même licence, le fichier JSON résultant sera écrasé. Le nom du fichier JSON est généré à partir du nom et du prénom extraits de la licence. Par conséquent, une deuxième numérisation de la même licence produira le même nom de fichier et remplacera le précédent.

@@ -34,7 +34,7 @@
 
         <div class="row mt-4">
             <div class="col-md-12">
-                <h2>Non-affectées</h2>
+                <h2>Non-affecté</h2>
                 <div id="unassigned" class="list-group d-flex flex-row flex-wrap">
                     {% for p in participants %}
                     <div class="list-group-item participant-card" data-id="{{ p.licence }}">
@@ -45,6 +45,9 @@
                         <p class="card-detail"><strong>Année validité:</strong> {{ p.annee_validite }}</p>
                         <p class="card-detail"><strong>Club:</strong> {{ p.club }}</p>
                         <p class="card-detail"><strong>Statut:</strong> {{ p.statut }}</p>
+                        {% if debug %}
+                        <p class="card-detail"><a href="{{ p.image_uri }}" target="_blank">Source Image</a></p>
+                        {% endif %}
                         <div class="form-check card-detail">
                             <input class="form-check-input" type="checkbox" {% if p.id_checked %}checked{% endif %}>
                             <label class="form-check-label">Pièce d'identité</label>
