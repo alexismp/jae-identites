@@ -13,3 +13,11 @@
     border-radius: 5px;
     padding: 10px;
 }
+
+.condensed-view .participant-card {
+    font-size: 0.8rem;
+}
+
+.condensed-view .card-detail {
+    display: none;
+}

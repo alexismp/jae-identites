@@ -10,6 +10,9 @@
 <body>
     <div class="container-fluid">
         <h1 contenteditable="true" class="text-center my-4">Nom de la rencontre</h1>
+        <div class="text-center mb-4">
+            <button id="toggleView" class="btn btn-primary">Vue Condensée</button>
+        </div>
 
         <div class="row">
             <div class="col-md-12">
@@ -37,12 +40,12 @@
                     <div class="list-group-item participant-card" data-id="{{ p.licence }}">
                         <p><strong>Nom:</strong> {{ p.nom }}</p>
                         <p><strong>Prénom:</strong> {{ p.prenom }}</p>
-                        <p><strong>Licence:</strong> {{ p.licence }}</p>
-                        <p><strong>Année validité:</strong> {{ p.annee_validite }}</p>
+                        <p class="card-detail"><strong>Licence:</strong> {{ p.licence }}</p>
+                        <p class="card-detail"><strong>Année validité:</strong> {{ p.annee_validite }}</p>
                         <p><strong>Classement:</strong> {{ p.classement }}</p>
-                        <p><strong>Club:</strong> {{ p.club }}</p>
-                        <p><strong>Statut:</strong> {{ p.statut }}</p>
-                        <div class="form-check">
+                        <p class="card-detail"><strong>Club:</strong> {{ p.club }}</p>
+                        <p class="card-detail"><strong>Statut:</strong> {{ p.statut }}</p>
+                        <div class="form-check card-detail">
                             <input class="form-check-input" type="checkbox" {% if p.id_checked %}checked{% endif %}>
                             <label class="form-check-label">Pièce d'identité</label>
                         </div>

@@ -29,6 +29,18 @@ document.addEventListener('DOMContentLoaded', function () {
     var team2 = document.getElementById('team2');
     var unassigned = document.getElementById('unassigned');
 
+    var toggleButton = document.getElementById('toggleView');
+    var body = document.body;
+
+    toggleButton.addEventListener('click', function () {
+        body.classList.toggle('condensed-view');
+        if (body.classList.contains('condensed-view')) {
+            toggleButton.textContent = 'Vue Complète';
+        } else {
+            toggleButton.textContent = 'Vue Condensée';
+        }
+    });
+
     new Sortable(officials, {
         group: 'shared',
         animation: 150
