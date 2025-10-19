@@ -7,6 +7,10 @@
     width: 220px; /* Adjust as needed */
 }
 
+.participant-card p {
+    margin-bottom: 0.25rem;
+}
+
 .list-group {
     min-height: 100px;
     border: 2px dashed #ccc;
