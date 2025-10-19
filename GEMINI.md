@@ -22,7 +22,7 @@ Ce document récapitule les configurations et les informations spécifiques à l
 -   **Région Cloud Run :** `europe-west1`
 -   **Type de registre :** Artifact Registry (et non Container Registry)
 -   **Nom du dépôt Artifact Registry :** `jae-identites`
--   **Clé API Google :** `GOOGLE_API_KEY` est fournie en tant que variable d'environnement lors du déploiement Cloud Run.
+-   **Clé API Google :** `GOOGLE_API_KEY` est fournie en tant que variable d'environnement lors du déploiement Cloud Run. La valeur de cette variable doit être récupérée depuis le fichier `.env`.
 
 ## Déploiement Cloud Run (Module `jae-ocr`)
 
@@ -35,7 +35,7 @@ Ce document récapitule les configurations et les informations spécifiques à l
       --image europe-west1-docker.pkg.dev/alexismp-runner/jae-identites/jae-ocr:latest \
       --region europe-west1 \
       --project alexismp-runner \
-      --set-env-vars GOOGLE_API_KEY="AIzaSyBoQ3gN0mRobnFKLDg9Zi-seFhW5TbAKMk" \
+      --set-env-vars GOOGLE_API_KEY=[VALEUR_DE_GOOGLE_API_KEY] \
       --allow-unauthenticated \
       --timeout 600
     ```
