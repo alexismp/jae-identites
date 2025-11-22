@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
+
 <body>
     <div class="container-fluid">
         <h1 contenteditable="true" class="text-center my-4">Nom de la rencontre</h1>
@@ -41,16 +43,19 @@
                 <div id="unassigned" class="list-group d-flex flex-row flex-wrap">
                     {% for p in participants %}
                     <div class="list-group-item participant-card" data-id="{{ p.licence }}">
-                        <p><strong>Nom:</strong> {{ p.nom }}</p>
+                        <p><strong>Nom:</strong>
+                            {% if p.image_uri %}
+                            <a href="{{ p.image_uri }}" target="_blank">{{ p.nom }}</a>
+                            {% else %}
+                            {{ p.nom }}
+                            {% endif %}
+                        </p>
                         <p><strong>Prénom:</strong> {{ p.prenom }}</p>
                         <p><strong>Classement:</strong> {{ p.classement }}</p>
                         <p class="card-detail"><strong>Licence:</strong> {{ p.licence }}</p>
                         <p class="card-detail"><strong>Année validité:</strong> {{ p.annee_validite }}</p>
                         <p class="card-detail"><strong>Club:</strong> {{ p.club }}</p>
                         <p class="card-detail"><strong>Statut:</strong> {{ p.statut }}</p>
-                        {% if debug %}
-                        <p class="card-detail"><a href="{{ p.image_uri }}" target="_blank">Source Image</a></p>
-                        {% endif %}
                         <div class="form-check card-detail">
                             <input class="form-check-input" type="checkbox" {% if p.id_checked %}checked{% endif %}>
                             <label class="form-check-label">Pièce d'identité</label>
@@ -65,4 +70,11 @@
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <script src="/static/js/script.js"></script>
 </body>
+<footer class="footer mt-auto py-3 bg-light">
+    <div class="container text-center">
+        <span class="text-muted">Alexis MP - </span>
+        <a href="https://github.com/alexismp/jae-identites" target="_blank">GitHub</a>
+    </div>
+</footer>
+
 </html>

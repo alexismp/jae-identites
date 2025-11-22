@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JAE Scanner</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
+
 <body>
     <!-- <h1>JAE Scan</h1> -->
     <div id="main-container">
@@ -26,10 +28,15 @@
     </div>
 
     <div id="results-container"></div>
-        <script src="/static/js/script.js"></script>
+    <script src="/static/js/script.js"></script>
 
-    <footer>
+    <footer class="footer mt-auto py-3 bg-light">
         <p>Build Version: {{ app_version }}</p>
+        <div class="container text-center">
+            <span class="text-muted">Alexis MP - </span>
+            <a href="https://github.com/alexismp/jae-identites" target="_blank">GitHub</a>
+        </div>
     </footer>
 </body>
+
 </html>

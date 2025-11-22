@@ -1,6 +1,6 @@
 import os
 import json
-from flask import Flask, request, render_template
+from flask import Flask, request, render_template, jsonify
 from google.cloud import storage
 import google.generativeai as genai
 from PIL import Image
@@ -152,13 +152,11 @@ def handle_storage_event(bucket_name, file_name):
             logging.info(f"Deleting lock file: {lock_filename}")
             lock_blob.delete()
 
-@app.route('/', methods=['GET'])
-def serve_page():
+def get_participants_data():
     participants = {}
     bucket_name = "jae-scan-results"
     bucket = storage_client.bucket(bucket_name)
     blobs = bucket.list_blobs()
-    debug_mode = request.args.get('debug', 'false').lower() == 'true'
 
     for blob in blobs:
         if blob.name.startswith('LIC_') and blob.name.endswith('.json'):
@@ -215,7 +213,17 @@ def serve_page():
                         break
                     else:
                         logging.info(f"  No match for {prenom_lic} {nom_lic}")
+    return participants
 
+@app.route('/api/participants', methods=['GET'])
+def api_participants():
+    participants = get_participants_data()
+    return jsonify(list(participants.values()))
+
+@app.route('/', methods=['GET'])
+def serve_page():
+    participants = get_participants_data()
+    debug_mode = request.args.get('debug', 'false').lower() == 'true'
     return render_template('index.html', participants=list(participants.values()), debug=debug_mode)
 
 if __name__ == '__main__':

@@ -115,7 +115,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
         var downloadAnchorNode = document.createElement('a');
-        downloadAnchorNode.setAttribute("href",     dataStr);
+        downloadAnchorNode.setAttribute("href", dataStr);
         downloadAnchorNode.setAttribute("download", filename);
         document.body.appendChild(downloadAnchorNode); // required for firefox
         downloadAnchorNode.click();
@@ -195,17 +195,16 @@ document.addEventListener('DOMContentLoaded', function () {
     function createParticipantCard(participant) {
         var card = document.createElement('div');
         card.className = 'list-group-item participant-card';
-        card.dataset.id = participant.id;
+        card.dataset.id = participant.licence;
 
         card.innerHTML = `
-            <p><strong>Nom:</strong> ${participant.nom}</p>
+            <p><strong>Nom:</strong> ${participant.image_uri ? `<a href="${participant.image_uri}" target="_blank">${participant.nom}</a>` : participant.nom}</p>
             <p><strong>Prénom:</strong> ${participant.prenom}</p>
             <p><strong>Classement:</strong> ${participant.classement}</p>
             <p class="card-detail"><strong>Licence:</strong> ${participant.licence}</p>
             <p class="card-detail"><strong>Année validité:</strong> ${participant.annee_validite}</p>
             <p class="card-detail"><strong>Club:</strong> ${participant.club}</p>
             <p class="card-detail"><strong>Statut:</strong> ${participant.statut}</p>
-            ${participant.image_uri ? `<p class="card-detail"><a href="${participant.image_uri}" target="_blank">Source Image</a></p>` : ''}
             <div class="form-check card-detail">
                 <input class="form-check-input" type="checkbox" ${participant.id_checked ? 'checked' : ''}>
                 <label class="form-check-label">Pièce d'identité</label>
@@ -213,5 +212,47 @@ document.addEventListener('DOMContentLoaded', function () {
         `;
         return card;
     }
+
+    // Polling logic
+    function pollParticipants() {
+        fetch('/api/participants')
+            .then(response => response.json())
+            .then(data => {
+                // Create a Set of current participant IDs for O(1) lookup
+                const currentIds = new Set(data.map(p => p.licence));
+
+                // 1. Add or Update existing participants
+                data.forEach(participant => {
+                    // Check if participant already exists in any list
+                    var existingCard = document.querySelector(`.participant-card[data-id="${participant.licence}"]`);
+
+                    if (!existingCard) {
+                        // Create new card
+                        var newCard = createParticipantCard(participant);
+                        // Add to unassigned list
+                        unassigned.appendChild(newCard);
+                    } else {
+                        // Optional: Update status if needed (e.g. id_checked)
+                        var checkbox = existingCard.querySelector('input[type="checkbox"]');
+                        if (checkbox && participant.id_checked !== checkbox.checked) {
+                            checkbox.checked = participant.id_checked;
+                        }
+                    }
+                });
+
+                // 2. Remove participants that are no longer in the data
+                var allCards = document.querySelectorAll('.participant-card');
+                allCards.forEach(card => {
+                    var cardId = card.dataset.id;
+                    if (!currentIds.has(cardId)) {
+                        card.remove();
+                    }
+                });
+            })
+            .catch(error => console.error('Error polling participants:', error));
+    }
+
+    // Poll every 5 seconds
+    setInterval(pollParticipants, 5000);
 
 });
