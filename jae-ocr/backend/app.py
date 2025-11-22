@@ -3,7 +3,7 @@ import json
 from flask import Flask, request, render_template, jsonify
 from google.cloud import storage
 import google.generativeai as genai
-from PIL import Image
+from PIL import Image, ImageFilter, ImageStat
 import io
 from datetime import datetime
 import logging
@@ -14,6 +14,25 @@ logging.basicConfig(level=logging.INFO)
 
 def normalize_name(name):
     return name.replace(' ', '').replace('-', '').lower() if name else ''
+
+
+def detect_blur(image, threshold=100):
+    """
+    Detects if an image is blurry using the Variance of Laplacian method.
+    Since we don't have OpenCV, we use Pillow's FindEdges filter as a proxy for Laplacian.
+    A lower score indicates less edge variance, meaning more blur.
+    """
+    # Convert image to grayscale
+    gray_image = image.convert('L')
+    # Apply edge enhancement filter (Laplacian approximation)
+    edges = gray_image.filter(ImageFilter.FIND_EDGES)
+    # Calculate statistics of the edge image
+    stat = ImageStat.Stat(edges)
+    # Variance of the edge pixels
+    variance = stat.var[0]
+    
+    logging.info(f"Blur detection score: {variance}")
+    return variance < threshold
 
 
 # Initialiser Flask
@@ -83,6 +102,11 @@ def handle_storage_event(bucket_name, file_name):
 
         logging.info(f"Image {file_name} téléchargée et prête pour l'analyse.")
 
+        # Detect blur
+        is_blurry = detect_blur(img)
+        if is_blurry:
+            logging.warning(f"Image {file_name} is detected as blurry.")
+
         # Préparer le modèle et le prompt pour Gemini
         model = genai.GenerativeModel('gemini-2.5-flash')
 
@@ -111,6 +135,7 @@ def handle_storage_event(bucket_name, file_name):
 
             json_data = json.loads(response_text)
             json_data['image_uri'] = f'gs://{bucket_name}/{file_name}'
+            json_data['is_blurry'] = is_blurry
             
             # Extraire le prénom et le nom de famille pour le nom du fichier
             first_name = json_data.get("prenom", "unknown")

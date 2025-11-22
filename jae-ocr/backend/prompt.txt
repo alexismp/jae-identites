@@ -10,7 +10,9 @@ Analyse l'image fournie. S'il n'y a pas de photo sur le document, alors c'est un
 Les valeurs possibles sont NC, 40, 30/5, 30/4, 30/3, 30/2, 30/1, 30, 15/5, 15/4, 15/3, 15/2, 15/1, 15, 5/6, 4/6, 3/6, 2/6, 1/6, 0, -2/6, -4/6, -15, ou alors la lettre "N" suivie d'un nombre. Ne retourne que la valeur du classement.
 6. `club`: le nom du club du joueur, en majuscules, il se trouve après le prix de la licence et avant le code du club.
 7. `statut`: le status EQ ou NvEQ du joueur. Cette valeur se trouve sur la troisième ligne après la date de naissance qui est entre paranthèses.
-Exemple de réponse attendue : {"nom": "MARTIN", "prenom": "Léa", "licence": "1234567B", "annee_validite": "2025", "classement": "30/1", "club": "MEUDON TENNIS", "status "type": "licence"}
+8. `confidence`: Ton niveau de confiance global dans l'extraction des données. Les valeurs possibles sont "High", "Medium", "Low". Si l'image est floue ou difficile à lire, mets "Low".
+9. `notes`: Tout commentaire pertinent sur la qualité de l'image ou les difficultés rencontrées (ex: "Image floue", "Reflet", "Texte coupé").
+Exemple de réponse attendue : {"nom": "MARTIN", "prenom": "Léa", "licence": "1234567B", "annee_validite": "2025", "classement": "30/1", "club": "MEUDON TENNIS", "statut": "EQ", "type": "licence", "confidence": "High", "notes": ""}
 
 Si le document comporte une photo, alors c'est une pièce d'identité dont tu dois extraire uniquement le Nom et le prénom avec une réponse au format {"nom": "MARTIN", "prenom": "Léa", "type": "identite" } 
 
