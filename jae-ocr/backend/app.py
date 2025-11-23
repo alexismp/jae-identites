@@ -16,23 +16,53 @@ def normalize_name(name):
     return name.replace(' ', '').replace('-', '').lower() if name else ''
 
 
+def crop_center(image, crop_percent=0.5):
+    width, height = image.size
+    new_width = width * crop_percent
+    new_height = height * crop_percent
+    left = (width - new_width) / 2
+    top = (height - new_height) / 2
+    right = (width + new_width) / 2
+    bottom = (height + new_height) / 2
+    return image.crop((left, top, right, bottom))
+
 def detect_blur(image, threshold=100):
-    """
-    Detects if an image is blurry using the Variance of Laplacian method.
-    Since we don't have OpenCV, we use Pillow's FindEdges filter as a proxy for Laplacian.
-    A lower score indicates less edge variance, meaning more blur.
-    """
-    # Convert image to grayscale
-    gray_image = image.convert('L')
-    # Apply edge enhancement filter (Laplacian approximation)
-    edges = gray_image.filter(ImageFilter.FIND_EDGES)
-    # Calculate statistics of the edge image
-    stat = ImageStat.Stat(edges)
-    # Variance of the edge pixels
-    variance = stat.var[0]
-    
-    logging.info(f"Blur detection score: {variance}")
-    return variance < threshold
+    try:
+        # Crop to center to avoid background noise
+        image = crop_center(image)
+        gray_image = image.convert('L')
+        edges = gray_image.filter(ImageFilter.FIND_EDGES)
+        stat = ImageStat.Stat(edges)
+        variance = stat.var[0]
+        return variance < threshold
+    except Exception as e:
+        logging.error(f"Error in detect_blur: {e}")
+        return False
+
+def detect_glare(image, threshold=250, pixel_percent=0.05):
+    try:
+        gray_image = image.convert('L')
+        hist = gray_image.histogram()
+        bright_pixels = sum(hist[threshold:])
+        total_pixels = image.width * image.height
+        ratio = bright_pixels / total_pixels
+        return ratio > pixel_percent
+    except Exception as e:
+        logging.error(f"Error in detect_glare: {e}")
+        return False
+
+def detect_low_contrast(image, threshold=50):
+    try:
+        gray_image = image.convert('L')
+        extrema = gray_image.getextrema()
+        if extrema:
+            min_val, max_val = extrema
+            contrast_range = max_val - min_val
+            return contrast_range < threshold
+        return False
+    except Exception as e:
+        logging.error(f"Error in detect_low_contrast: {e}")
+        return False
 
 
 # Initialiser Flask
@@ -74,15 +104,25 @@ def index():
             logging.info(f"Lock file {lock_filename} exists. Skipping.")
             return "", 204
 
-        handle_storage_event(bucket_name, file_name)
+        handle_storage_event(envelope)
 
         return "", 204
     except Exception as e:
         logging.error(f"Erreur lors du traitement du message : {e}")
         return "", 500
 
-def handle_storage_event(bucket_name, file_name):
-    logging.info(f"Fichier {file_name} uploadé dans le bucket {bucket_name}.")
+def handle_storage_event(event):
+    """Traite un événement de stockage Cloud Storage."""
+    file_data = event
+    bucket_name = file_data['bucket']
+    file_name = file_data['name']
+
+    logging.info(f"Processing file: {file_name} from bucket: {bucket_name}")
+
+    # Vérifier si le fichier est une image
+    if not file_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+        logging.info(f"File {file_name} is not an image. Skipping.")
+        return
     
     destination_bucket_name = "jae-scan-results"
     lock_filename = f"{file_name}.LOCK"
@@ -102,10 +142,18 @@ def handle_storage_event(bucket_name, file_name):
 
         logging.info(f"Image {file_name} téléchargée et prête pour l'analyse.")
 
-        # Detect blur
+        # Detect quality issues
         is_blurry = detect_blur(img)
-        if is_blurry:
-            logging.warning(f"Image {file_name} is detected as blurry.")
+        has_glare = detect_glare(img)
+        low_contrast = detect_low_contrast(img)
+        
+        quality_notes = []
+        if is_blurry: quality_notes.append("Blurry")
+        if has_glare: quality_notes.append("Glare")
+        if low_contrast: quality_notes.append("Low Contrast")
+        
+        if quality_notes:
+            logging.warning(f"Image {file_name} quality issues: {', '.join(quality_notes)}")
 
         # Préparer le modèle et le prompt pour Gemini
         model = genai.GenerativeModel('gemini-2.5-flash')
@@ -135,7 +183,36 @@ def handle_storage_event(bucket_name, file_name):
 
             json_data = json.loads(response_text)
             json_data['image_uri'] = f'gs://{bucket_name}/{file_name}'
-            json_data['is_blurry'] = is_blurry
+            
+            # Combine image analysis with Gemini confidence
+            gemini_confidence = json_data.get('confidence', 'High')
+            
+            # Logic: If Gemini is not confident, OR if we detect significant issues, flag it.
+            # However, user feedback suggests "is_blurry" was false even when confidence was Medium.
+            # So we should trust Gemini's confidence more.
+            
+            json_data['is_blurry'] = is_blurry # Keep raw detection
+            json_data['has_glare'] = has_glare
+            json_data['low_contrast'] = low_contrast
+            
+            # Create a master "quality_check" field
+            is_quality_ok = True
+            if gemini_confidence != "High":
+                is_quality_ok = False
+            if is_blurry or has_glare or low_contrast:
+                # We can be a bit more lenient if Gemini is confident, but let's flag it for now
+                # Or maybe just add to notes
+                pass
+                
+            json_data['quality_check_passed'] = is_quality_ok
+            
+            # Append our detection notes to Gemini's notes
+            existing_notes = json_data.get('notes', "")
+            new_notes = ", ".join(quality_notes)
+            if existing_notes and new_notes:
+                json_data['notes'] = f"{existing_notes}. Detected: {new_notes}"
+            elif new_notes:
+                json_data['notes'] = f"Detected: {new_notes}"
             
             # Extraire le prénom et le nom de famille pour le nom du fichier
             first_name = json_data.get("prenom", "unknown")
