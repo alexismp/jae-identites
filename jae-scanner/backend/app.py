@@ -5,6 +5,10 @@ from PIL import Image
 import io
 from datetime import datetime
 from google.cloud import storage
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 
 # Récupérer la version de l'application depuis les variables d'environnement
 APP_VERSION = os.getenv('APP_VERSION', 'development')
@@ -32,7 +36,7 @@ def scan_image():
         try:
             # Lire l'image en mémoire
             img_bytes = file.read()
-            print(f"Taille du fichier '''{file.filename}''' reçu : {len(img_bytes)} bytes")
+            logging.info(f"Taille du fichier '{file.filename}' reçu : {len(img_bytes)} bytes")
             img = Image.open(io.BytesIO(img_bytes))
 
             # Uploader l'image sur Google Cloud Storage
@@ -48,21 +52,19 @@ def scan_image():
                 
                 # Uploader les bytes de l'image
                 blob.upload_from_string(img_bytes, content_type=file.content_type)
-                print(f"Image {unique_filename} uploaded to {bucket_name}.")
-                print(f"Image {unique_filename} uploadée avec succès sur {bucket_name}")
+                logging.info(f"Image {unique_filename} uploaded to {bucket_name}.")
+                
+                logging.info(f"Image reçue: {file.filename}, format: {img.format}, taille: {img.size}")
+
+                return jsonify({"uploaded_file": unique_filename})
 
             except Exception as e:
-                print(f"Erreur lors de l'upload sur Google Cloud Storage : {e}")
-                # On ne bloque pas le flux principal si l'upload échoue, 
-                # mais on log l'erreur pour le débogage.
-
-            print(f"Image reçue: {file.filename}, format: {img.format}, taille: {img.size}")
-
-            return jsonify({"uploaded_file": unique_filename})
+                logging.error(f"Erreur lors de l'upload sur Google Cloud Storage : {e}")
+                return jsonify({"error": f"Erreur lors de l'upload sur Google Cloud Storage: {str(e)}"}), 500
 
         except Exception as e:
-            print(f"Erreur lors de l'upload ou de la manipulation de l'image : {e}")
-            return jsonify({"error": f"Erreur lors de l'upload ou de la manipulation de l'image: {str(e)}"}), 500
+            logging.error(f"Erreur lors de la manipulation de l'image : {e}")
+            return jsonify({"error": f"Erreur lors de la manipulation de l'image: {str(e)}"}), 500
 
     return jsonify({"error": "Une erreur inattendue est survenue"}), 500
 
