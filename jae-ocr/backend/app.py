@@ -26,7 +26,7 @@ def crop_center(image, crop_percent=0.5):
     bottom = (height + new_height) / 2
     return image.crop((left, top, right, bottom))
 
-def detect_blur(image, threshold=100):
+def detect_blur(image, threshold=500):
     try:
         # Crop to center to avoid background noise
         image = crop_center(image)
