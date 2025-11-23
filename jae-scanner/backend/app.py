@@ -18,6 +18,59 @@ APP_VERSION = os.getenv('APP_VERSION', 'development')
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
+from PIL import ImageFilter, ImageStat
+
+def crop_center(image, crop_percent=0.5):
+    width, height = image.size
+    new_width = width * crop_percent
+    new_height = height * crop_percent
+    left = (width - new_width) / 2
+    top = (height - new_height) / 2
+    right = (width + new_width) / 2
+    bottom = (height + new_height) / 2
+    return image.crop((left, top, right, bottom))
+
+def detect_blur(image, threshold=500):
+    try:
+        # Crop to center to avoid background noise
+        image = crop_center(image)
+        gray_image = image.convert('L')
+        edges = gray_image.filter(ImageFilter.FIND_EDGES)
+        stat = ImageStat.Stat(edges)
+        variance = stat.var[0]
+        logging.info(f"Blur score: {variance}")
+        return variance, variance < threshold
+    except Exception as e:
+        logging.error(f"Error in detect_blur: {e}")
+        return 0, False
+
+def detect_glare(image, threshold=250, pixel_percent=0.05):
+    try:
+        gray_image = image.convert('L')
+        hist = gray_image.histogram()
+        bright_pixels = sum(hist[threshold:])
+        total_pixels = image.width * image.height
+        ratio = bright_pixels / total_pixels
+        logging.info(f"Glare ratio: {ratio}")
+        return ratio, ratio > pixel_percent
+    except Exception as e:
+        logging.error(f"Error in detect_glare: {e}")
+        return 0, False
+
+def detect_low_contrast(image, threshold=50):
+    try:
+        gray_image = image.convert('L')
+        extrema = gray_image.getextrema()
+        if extrema:
+            min_val, max_val = extrema
+            contrast_range = max_val - min_val
+            logging.info(f"Contrast range: {contrast_range}")
+            return contrast_range, contrast_range < threshold
+        return 0, False
+    except Exception as e:
+        logging.error(f"Error in detect_low_contrast: {e}")
+        return 0, False
+
 @app.route('/')
 def index():
     return render_template('index.html', app_version=APP_VERSION)
@@ -38,6 +91,24 @@ def scan_image():
             img_bytes = file.read()
             logging.info(f"Taille du fichier '{file.filename}' reçu : {len(img_bytes)} bytes")
             img = Image.open(io.BytesIO(img_bytes))
+
+            # Quality Checks
+            blur_score, is_blurry = detect_blur(img)
+            glare_ratio, has_glare = detect_glare(img)
+            contrast_range, low_contrast = detect_low_contrast(img)
+
+            errors = []
+            if is_blurry:
+                errors.append(f"Image trop floue (Score: {blur_score:.0f} < 500)")
+            if has_glare:
+                errors.append(f"Reflet détecté (Ratio: {glare_ratio:.2f})")
+            if low_contrast:
+                errors.append(f"Contraste trop faible (Range: {contrast_range})")
+
+            if errors:
+                error_msg = "Qualité insuffisante : " + ", ".join(errors)
+                logging.warning(f"Image rejected: {error_msg}")
+                return jsonify({"error": error_msg}), 400
 
             # Uploader l'image sur Google Cloud Storage
             try:
