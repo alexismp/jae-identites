@@ -5,9 +5,9 @@ from PIL import Image
 import io
 from datetime import datetime
 from google.cloud import storage
+import logging
+import subprocess
 
-# Récupérer la version de l'application depuis les variables d'environnement
-APP_VERSION = os.getenv('APP_VERSION', 'development')
 
 # Initialiser Flask pour servir les fichiers statiques depuis le dossier 'static'
 # et les templates depuis le dossier 'templates'
@@ -16,7 +16,29 @@ CORS(app)
 
 @app.route('/')
 def index():
-    return render_template('index.html', app_version=APP_VERSION)
+    build_info = get_build_info()
+    return render_template('index.html', build_info=build_info)
+
+def get_build_info():
+    """Retrieves build information (commit hash and branch name)."""
+    commit_hash = os.getenv('GIT_COMMIT') or os.getenv('BUILD_NUMBER')
+    branch_name = os.getenv('GIT_BRANCH') or os.getenv('BRANCH_NAME')
+
+    if not commit_hash or not branch_name:
+        try:
+            if not commit_hash:
+                commit_hash = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).strip().decode('utf-8')
+            if not branch_name:
+                branch_name = subprocess.check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD']).strip().decode('utf-8')
+        except Exception as e:
+            logging.warning(f"Failed to retrieve git info: {e}")
+            if not commit_hash: commit_hash = "Unknown"
+            if not branch_name: branch_name = "Unknown"
+
+    return {
+        'commit_hash': commit_hash,
+        'branch_name': branch_name
+    }
 
 @app.route('/scan', methods=['POST'])
 def scan_image():

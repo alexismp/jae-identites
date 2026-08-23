@@ -7,6 +7,7 @@ from PIL import Image
 import io
 from datetime import datetime
 import logging
+import subprocess
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -84,7 +85,7 @@ def handle_storage_event(bucket_name, file_name):
         logging.info(f"Image {file_name} téléchargée et prête pour l'analyse.")
 
         # Préparer le modèle et le prompt pour Gemini
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        model = genai.GenerativeModel('gemini-3.7-flash')
 
         with open('prompt.txt', 'r') as f:
             prompt = f.read()
@@ -224,7 +225,29 @@ def api_participants():
 def serve_page():
     participants = get_participants_data()
     debug_mode = request.args.get('debug', 'false').lower() == 'true'
-    return render_template('index.html', participants=list(participants.values()), debug=debug_mode)
+    build_info = get_build_info()
+    return render_template('index.html', participants=list(participants.values()), debug=debug_mode, build_info=build_info)
+
+def get_build_info():
+    """Retrieves build information (commit hash and branch name)."""
+    commit_hash = os.getenv('GIT_COMMIT') or os.getenv('BUILD_NUMBER')
+    branch_name = os.getenv('GIT_BRANCH') or os.getenv('BRANCH_NAME')
+
+    if not commit_hash or not branch_name:
+        try:
+            if not commit_hash:
+                commit_hash = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).strip().decode('utf-8')
+            if not branch_name:
+                branch_name = subprocess.check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD']).strip().decode('utf-8')
+        except Exception as e:
+            logging.warning(f"Failed to retrieve git info: {e}")
+            if not commit_hash: commit_hash = "Unknown"
+            if not branch_name: branch_name = "Unknown"
+
+    return {
+        'commit_hash': commit_hash,
+        'branch_name': branch_name
+    }
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
