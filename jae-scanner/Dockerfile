@@ -14,6 +14,12 @@ COPY backend/requirements.txt requirements.txt
 # Installer les dépendances
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Arguments de build pour le commit Git affiché en bas de page
+ARG GIT_COMMIT=unknown
+ARG GIT_BRANCH=unknown
+ENV GIT_COMMIT=$GIT_COMMIT
+ENV GIT_BRANCH=$GIT_BRANCH
+
 # Copier tous les fichiers du projet (frontend et backend)
 # Le backend est à la racine, le frontend dans /app/static
 COPY backend/ /app/
