@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "JAE Ten'Up Roster Importer",
+  "version": "1.0.0",
+  "description": "Extrait automatiquement les compositions des deux équipes depuis une page de rencontre Ten'Up (session connectée) et les envoie à JAE-OCR.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://tenup.fft.fr/*",
+    "https://jae-ocr-2500276981.europe-west1.run.app/*"
+  ],
+  "action": {
+    "default_title": "Importer les équipes vers JAE-OCR",
+    "default_popup": "popup.html"
+  }
+}
