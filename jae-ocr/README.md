@@ -1,91 +1,61 @@
 # JAE OCR
 
-JAE OCR est un service backend qui effectue la reconnaissance optique de caractères (OCR) sur des documents de type pièces d'identités ou licences FFT.
+Service backend (Cloud Run) qui effectue la reconnaissance visuelle de documents d'identité et de licences FFT via Gemini (`gemini-4-hydrogen`), expose le tableau web de suivi de rencontre et fournit un endpoint de Signed URL GCS pour l'upload direct depuis l'application Android.
 
-## Fonctionnalités
+## Documents pris en charge
 
--   **Déclenchement automatique :** Le service est déclenché par le téléchargement d'une nouvelle image dans un bucket Google Cloud Storage.
--   **Extraction d'informations par IA :** Utilise l'API Google Gemini pour extraire le texte et les informations pertinentes de l'image du document.
--   **Stockage des résultats :** Enregistre les données extraites sous forme de fichier JSON structuré dans un bucket de résultats distinct.
+- **Pièces d'identité** : CNI française ancien format (ID-2 / MRZ TD2), CNI française nouveau format (ID-1), passeports français et étrangers (translittération latine, croisement VIZ + MRZ, `nom_usage`, prénoms multiples).
+- **Licences FFT** : attestation de licence complète (`attestation_fft`) et capture/photo d'écran Ten'Up (`tenup_ecran`, gestion des champs manquants à `null` et normalisation des saisons `2025/2026` → `2026`).
 
-## Technologies utilisées
+## Endpoints
 
--   **Python :** Le langage principal pour le service.
--   **Flask :** Un framework web léger pour gérer les événements.
--   **Google Generative AI :** Le service d'IA utilisé pour l'extraction d'informations.
--   **Google Cloud Storage :** Pour le stockage des images et des résultats.
+- `POST /` : réception des événements Eventarc GCS (`object.v1.finalized`), verrou atomique `.LOCK` (`if_generation_match=0`), analyse `gemini-4-hydrogen` en JSON strict (`response_mime_type="application/json"`), sauvegarde dans `jae-scan-results`.
+- `GET /` : interface web de gestion de la rencontre (glisser-déposer Officiels / Équipe 1 / Équipe 2 / Non-affectés).
+- `GET /api/participants` : liste JSON des participants (y compris les licences Ten'Up incomplètes avec `licence_incomplete: true`) avec rapprochement Unicode (`nom`, `nom_usage`, prénoms multiples) contre les fichiers `PID_*.json`.
+- `POST /api/upload-url` : génère une **GCS Signed URL v4** (valable 5 min) vers `jae-scan-bucket` pour permettre l'upload direct depuis Android sans passer par `jae-scanner`. Protégé par `SCANNER_API_KEY` si définie.
+
+## Variables d'environnement
+
+| Variable | Défaut | Description |
+| :--- | :--- | :--- |
+| `GOOGLE_API_KEY` | *(requis)* | Clé API Gemini (lue depuis `.env`, ne jamais commiter) |
+| `GEMINI_MODEL` | `gemini-4-hydrogen` | Modèle Gemini utilisé pour l'OCR |
+| `SCAN_BUCKET_NAME` | `jae-scan-bucket` | Bucket GCS source des images |
+| `RESULTS_BUCKET_NAME` | `jae-scan-results` | Bucket GCS des résultats JSON et verrous `.LOCK` |
+| `SCANNER_API_KEY` | *(optionnel)* | Clé API partagée (`X-API-Key` / `Bearer`) pour `POST /api/upload-url` |
 
 ## Déploiement sur Cloud Run
 
-Après avoir construit l'image Docker localement, vous pouvez la déployer sur Cloud Run.
-
-1.  **Construire l'image Docker :**
-    ```bash
-    docker build -t jae-ocr .
-    ```
-
-2.  **Tagger l'image pour Artifact Registry :**
-    ```bash
-    docker tag jae-ocr:latest europe-west1-docker.pkg.dev/alexismp-runner/jae-identites-repo/jae-ocr:latest
-    ```
-
-3.  **Pousser l'image vers Artifact Registry :**
-    ```bash
-    docker push europe-west1-docker.pkg.dev/alexismp-runner/jae-identites-repo/jae-ocr:latest
-    ```
-
-4.  **Déployer sur Cloud Run :**
-    Assurez-vous d'inclure la variable d'environnement `GOOGLE_API_KEY` lors du déploiement.
-    ```bash
-    gcloud run deploy jae-ocr --image europe-west1-docker.pkg.dev/alexismp-runner/jae-identites-repo/jae-ocr:latest --region europe-west1 --set-env-vars="GOOGLE_API_KEY=[VOTRE_CLE_API]"
-    ```
-
-## Configuration du Déclencheur (Trigger)
-
-Pour que le service `jae-ocr` soit automatiquement déclenché lors du téléversement d'un fichier dans le bucket `gs://jae-scan-bucket`, vous devez créer un déclencheur Eventarc.
-
-1.  **Trouver le compte de service :**
-    Vous aurez besoin de l'adresse e-mail du compte de service qui sera utilisé par le déclencheur. Vous pouvez utiliser le compte de service Compute Engine par défaut. Pour le trouver, exécutez la commande suivante en remplaçant `alexismp-runner` par votre ID de projet :
-    ```bash
-    gcloud projects describe alexismp-runner --format="value(projectNumber)"
-    ```
-    Le compte de service sera `[NUMERO_PROJET]-compute@developer.gserviceaccount.com`. Pour ce projet, c'est `2500276981-compute@developer.gserviceaccount.com`.
-
-2.  **Créer le déclencheur :**
-    Exécutez la commande suivante pour créer le déclencheur. Assurez-vous que le bucket se trouve dans la même région que le déclencheur (ici, `eu`).
-    ```bash
-    gcloud eventarc triggers create jae-ocr-trigger \
-        --location=eu \
-        --destination-run-service=jae-ocr \
-        --destination-run-region=europe-west1 \
-        --event-filters="type=google.cloud.storage.object.v1.finalized" \
-        --event-filters="bucket=jae-scan-bucket" \
-        --service-account="2500276981-compute@developer.gserviceaccount.com"
-    ```
-
-## Permissions
-
-Le compte de service utilisé par le service Cloud Run (ici, `2500276981-compute@developer.gserviceaccount.com`) doit disposer des autorisations IAM suivantes pour fonctionner correctement :
-
--   **Storage Object Admin (`roles/storage.objectAdmin`)**: Pour lire les images du bucket source et écrire les résultats JSON dans le bucket de destination.
--   **AI Platform User (`roles/aiplatform.user`)**: Pour utiliser l'API Gemini.
-
-Vous pouvez ajouter ces rôles au compte de service avec les commandes `gcloud` suivantes :
-
 ```bash
-gcloud projects add-iam-policy-binding alexismp-runner \
-    --member="serviceAccount:2500276981-compute@developer.gserviceaccount.com" \
-    --role="roles/storage.objectAdmin"
+# 1. Construire l'image (Apple Silicon -> linux/amd64 pour Cloud Run)
+podman build --platform linux/amd64 \
+  -t europe-west1-docker.pkg.dev/alexismp-runner/jae-identites/jae-ocr:latest \
+  ./jae-ocr
 
-gcloud projects add-iam-policy-binding alexismp-runner \
-    --member="serviceAccount:2500276981-compute@developer.gserviceaccount.com" \
-    --role="roles/aiplatform.user"
+# 2. Pousser vers Artifact Registry
+podman push europe-west1-docker.pkg.dev/alexismp-runner/jae-identites/jae-ocr:latest
+
+# 3. Déployer sur Cloud Run (avec GOOGLE_API_KEY lue depuis .env)
+gcloud run deploy jae-ocr \
+  --project alexismp-runner \
+  --image europe-west1-docker.pkg.dev/alexismp-runner/jae-identites/jae-ocr:latest \
+  --region europe-west1 \
+  --allow-unauthenticated \
+  --set-env-vars="GOOGLE_API_KEY=<VALEUR_DEPUIS_.ENV>"
 ```
 
-## Fonctionnement
+## Déclencheur Eventarc & permissions IAM
 
-1.  Un fichier image est téléchargé dans le bucket Cloud Storage d'entrée.
-2.  L'événement de téléchargement déclenche le service JAE OCR.
-3.  Le service télécharge l'image, l'envoie à l'API Gemini avec une invite pour extraire les informations.
-4.  L'API Gemini retourne les données extraites au format JSON.
-5.  Le service enregistre ces données JSON dans un bucket Cloud Storage de destination.
+```bash
+gcloud eventarc triggers create jae-ocr-trigger \
+  --location=eu \
+  --destination-run-service=jae-ocr \
+  --destination-run-region=europe-west1 \
+  --event-filters="type=google.cloud.storage.object.v1.finalized" \
+  --event-filters="bucket=jae-scan-bucket" \
+  --service-account="2500276981-compute@developer.gserviceaccount.com"
+```
+
+Rôles requis sur le compte de service Cloud Run :
+- `roles/storage.objectAdmin` (lecture `jae-scan-bucket`, écriture/suppression `jae-scan-results`)
+- `roles/iam.serviceAccountTokenCreator` (si utilisation de `POST /api/upload-url` pour signer les URLs GCS)

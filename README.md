@@ -2,49 +2,26 @@
 
 # JAE Identités
 
-JAE Scan est une application web qui fonctionne sur téléphone portable pour permettre aux Juges-Arbitres par Équipe (JAE) de vérifier les identités et les licences des joueurs qui participent à une rencontre par équipe.
-
-Ce projet contient deux modules principaux pour la numérisation et le traitement de documents d'identité et de licences.
+Suite d'outils permettant aux Juges-Arbitres par Équipe (JAE) de scanner et vérifier rapidement les pièces d'identité (CNI française ancien/nouveau format, passeports français et étrangers) et les licences FFT (attestations de licence et captures d'écran Ten'Up) lors d'une rencontre par équipe.
 
 ## Modules
 
-### 1. JAE Scanner (`jae-scanner`)
-
-Ce module est une interface web front-end conçue pour capturer des images de documents à l'aide de l'appareil photo d'un appareil.
-
--   **Fonctionnalité** : Fournit une interface utilisateur dans le navigateur pour numériser des documents (pièces d'identités ou licences)
--   **Technologie** : Développé avec Python, Flask et des technologies front-end standard (HTML, CSS, JavaScript).
--   **Sortie** : Télécharge l'image capturée dans un bucket Google Cloud Storage pour traitement.
-
-### 2. JAE OCR (`jae-ocr`)
-
-Ce module est un service backend qui effectue la reconnaissance optique de caractères (OCR) sur les documents téléchargés par le JAE Scanner.
-
--   **Fonctionnalité** :
-    -   Déclenché par le téléchargement de nouvelles images dans un bucket Google Cloud Storage spécifique.
-    -   Utilise l'API Google Gemini pour extraire le texte et les informations pertinentes de l'image du document.
-    -   Enregistre les données extraites sous forme de fichier JSON structuré dans un bucket de résultats distinct.
--   **Technologie** : Un service basé sur Python qui s'appuie sur l'IA de Google Gemini.
-
-#### Page de gestion de la rencontre
-
-Le module `jae-ocr` inclut désormais une page web accessible à la racine du service pour gérer la rencontre. Cette page offre les fonctionnalités suivantes :
-
--   **Titre de la rencontre modifiable** : Le titre de la page est "Rencontre du [Date du jour]" par défaut et peut être modifié.
--   **Sections pour les officiels et les équipes** : La page est divisée en sections pour les officiels, deux équipes et une section pour les fiches non-affectées.
--   **Gestion des fiches de participants** :
-    -   Les fiches des participants sont créées à partir des fichiers `LIC_*.json` trouvés dans le bucket `jae-scan-results`.
-    -   Les fiches peuvent être déplacées par glisser-déposer entre les différentes sections.
-    -   Le nom des équipes est automatiquement mis à jour avec le nom du club du premier participant ajouté à l'équipe.
--   **Vérification des pièces d'identité** : Une case à cocher sur chaque fiche indique si la pièce d'identité a été présentée. Cette case est automatiquement cochée si un fichier `PID_*.json` correspondant est trouvé.
+| Module | Rôle | Stack | Documentation |
+| :--- | :--- | :--- | :--- |
+| **`jae-scanner`** | Application web mobile pour capturer les documents via le navigateur et les envoyer vers Cloud Storage | Python, Flask, HTML/JS, Cloud Run | [jae-scanner/README.md](jae-scanner/README.md) |
+| **`jae-ocr`** | Backend OCR déclenché par Eventarc + tableau web de gestion de la rencontre + endpoint Signed URL | Python, Flask, Gemini (`gemini-4-hydrogen`), GCS, Cloud Run | [jae-ocr/README.md](jae-ocr/README.md) |
+| **`jae-scanner-android`** | Squelette d'application Android native (destiné à un dépôt GitHub dédié) avec CameraX, flash/torche et analyse qualité on-device | Kotlin, Jetpack Compose, CameraX, ML Kit (+ Gemini Nano) | [jae-scanner-android/README.md](jae-scanner-android/README.md) |
 
 ## Flux de travail
 
-1.  L'utilisateur accède à l'interface web du **JAE Scanner** et numérise un document.
-2.  L'image capturée est téléchargée dans un bucket Cloud Storage.
-3.  Le téléchargement déclenche le service **JAE OCR**.
-4.  **JAE OCR** traite l'image avec Gemini, extrait les données et enregistre le JSON résultant dans un autre bucket Cloud Storage.
+1. Le JAE capture un document depuis **JAE Scanner** (web mobile) ou **JAE Scanner Android**.
+2. L'image JPEG est téléversée dans le bucket GCS `jae-scan-bucket` avec un nom unique horodaté + UUID (via `POST /scan` sur `jae-scanner` ou directement via Signed URL v4 fournie par `POST /api/upload-url` sur `jae-ocr`).
+3. Un déclencheur Eventarc (`google.cloud.storage.object.v1.finalized`) invoque **JAE OCR** sur Cloud Run.
+4. **JAE OCR** pose un verrou atomique `.LOCK` (`if_generation_match=0`), analyse l'image avec **Gemini (`gemini-4-hydrogen`)** en JSON strict (reconnaissance sémantique des CNI, passeports, attestations FFT et écrans Ten'Up) et enregistre le résultat dans `jae-scan-results` (`{LIC|PID|UNKNOWN}_<prenom>_<nom>_<uuid>.json`).
+5. La page web de **JAE OCR** (`GET /` + polling `GET /api/participants`) affiche les fiches de participants (y compris les écrans Ten'Up incomplets) et coche automatiquement `id_checked` via un rapprochement Unicode tolérant (`nom`, `nom_usage`, prénoms multiples, inversions).
 
-### Gestion des doublons
+## Gestion des doublons & concurrence
 
-**Important :** Si vous numérisez deux fois la même licence, le fichier JSON résultant sera écrasé. Le nom du fichier JSON est généré à partir du nom et du prénom extraits de la licence. Par conséquent, une deuxième numérisation de la même licence produira le même nom de fichier et remplacera le précédent.
+- Chaque upload et chaque fichier résultat inclut un identifiant UUID court (`8` caractères hexadécimaux) afin d'éviter toute collision ou écrasement lors de scans rapprochés.
+- Le verrou `.LOCK` est acquis de manière atomique côté GCS (`if_generation_match=0`), ce qui protège contre les doublons Eventarc et les accès concurrents multi-threads.
+- La sécurité des endpoints d'upload peut être renforcée via la variable d'environnement optionnelle `SCANNER_API_KEY` (`X-API-Key` ou `Authorization: Bearer`).

@@ -1,71 +1,49 @@
-# JAE Scanner
+# JAE Scanner (Web mobile)
 
-JAE Scanner est une application web qui numérise des documents (pièces d'identités ou licences) à l'aide de l'appareil photo d'un appareil et les télécharge pour traitement.
+Application web mobile permettant de capturer un document (pièce d'identité ou licence FFT) depuis le navigateur d'un smartphone et de le téléverser dans le bucket Cloud Storage `jae-scan-bucket` pour traitement par `jae-ocr`.
+
+> **Note :** Pour une expérience native avec contrôle du flash/torche et analyse de qualité on-device, voir [jae-scanner-android/README.md](../jae-scanner-android/README.md).
 
 ## Fonctionnalités
 
--   **Numérisation par appareil photo :** Utilise l'appareil photo de l'appareil pour capturer une image du document.
--   **Téléchargement d'images :** Télécharge l'image capturée dans un bucket Google Cloud Storage.
+- **Capture caméra navigateur** (`getUserMedia`, mode paysage, ratio carte ID-1 `1.586`, export JPEG haute qualité).
+- **Validation & upload fiable** (`POST /scan`) :
+  - Validation Pillow de l'image reçue (`400` si vide ou corrompue).
+  - Nom de fichier unique anti-collision : `YYYY-MM-DD_HH-MM-SS-<uuid8>-<nom_sûr>`.
+  - Remontée explicite d'erreur HTTP `502` si l'upload vers Cloud Storage échoue.
+  - Protection optionnelle par clé API partagée (`SCANNER_API_KEY` via `X-API-Key` ou `Bearer`).
 
-## Technologies utilisées
+## Variables d'environnement
 
-### Backend
-
--   **Python :** Le langage principal pour le backend.
--   **Flask :** Un framework web léger pour Python.
--   **Gunicorn :** Un serveur HTTP WSGI Python pour UNIX.
-
-### Frontend
-
--   **HTML/CSS/JavaScript :** Le trio standard pour le développement web.
-
-### Conteneurisation
-
--   **Docker :** L'application est conteneurisée pour un déploiement facile.
-
-## Démarrage
-
-### Prérequis
-
--   Docker
-
-### Installation
-
-1.  **Cloner le dépôt :**
-    ```bash
-    git clone https://github.com/your-username/jae-identites.git
-    cd jae-identites/jae-scanner
-    ```
-2.  **Construire et lancer le conteneur Docker :**
-    ```bash
-    docker build -t jae-scanner .
-    docker run -p 8080:8080 jae-scanner
-    ```
-3.  **Accéder à l'application :**
-    -   Ouvrez votre navigateur web et accédez à `http://localhost:8080`.
+| Variable | Défaut | Description |
+| :--- | :--- | :--- |
+| `SCAN_BUCKET_NAME` | `jae-scan-bucket` | Bucket GCS de destination des images |
+| `SCANNER_API_KEY` | *(optionnel)* | Clé API partagée requise sur `POST /scan` si définie |
+| `PORT` | `8080` | Port HTTP d'écoute (Gunicorn en conteneur, `5001` en local) |
 
 ## Déploiement sur Cloud Run
 
-Après avoir construit l'image Docker localement, vous pouvez la déployer sur Cloud Run.
+```bash
+# 1. Construire l'image (Apple Silicon -> linux/amd64 pour Cloud Run)
+podman build --platform linux/amd64 \
+  -t europe-west1-docker.pkg.dev/alexismp-runner/jae-identites/jae-scanner:latest \
+  ./jae-scanner
 
-1.  **Tagger l'image pour Artifact Registry :**
-    ```bash
-    docker tag jae-scanner:latest europe-west1-docker.pkg.dev/alexismp-runner/jae-identites-repo/jae-scanner:latest
-    ```
+# 2. Pousser vers Artifact Registry
+podman push europe-west1-docker.pkg.dev/alexismp-runner/jae-identites/jae-scanner:latest
 
-2.  **Pousser l'image vers Artifact Registry :**
-    ```bash
-    docker push europe-west1-docker.pkg.dev/alexismp-runner/jae-identites-repo/jae-scanner:latest
-    ```
+# 3. Déployer sur Cloud Run
+gcloud run deploy jae-scanner \
+  --project alexismp-runner \
+  --image europe-west1-docker.pkg.dev/alexismp-runner/jae-identites/jae-scanner:latest \
+  --region europe-west1 \
+  --allow-unauthenticated
+```
 
-3.  **Déployer sur Cloud Run :**
-    ```bash
-    gcloud run deploy jae-scanner --image europe-west1-docker.pkg.dev/alexismp-runner/jae-identites-repo/jae-scanner:latest --region europe-west1
-    ```
+## Développement local
 
-## Fonctionnement
-
-1.  L'utilisateur pointe l'appareil photo de son appareil vers un document.
-2.  Une fois qu'une image nette est détectée, elle est capturée et envoyée au backend Flask.
-3.  Le backend reçoit l'image et la télécharge dans un bucket Google Cloud Storage.
-4.  Le backend retourne une confirmation avec le nom du fichier téléchargé.
+```bash
+cd jae-scanner/backend
+python3 app.py
+# Interface disponible sur http://localhost:5001
+```
