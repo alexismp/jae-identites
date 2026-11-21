@@ -11,12 +11,27 @@
 
 <body>
     <div class="container-fluid">
+        {% if debug %}
+        <div class="alert alert-warning d-flex flex-wrap justify-content-center align-items-center gap-2 py-2 mb-2 mt-2" role="alert">
+            <span><strong>Mode Debug</strong> — rencontre locale isolée (aucune écriture dans les buckets).</span>
+            <button id="loadTestDataBtn" class="btn btn-sm btn-warning">Charger le jeu de test</button>
+            <button id="clearDebugMatchBtn" class="btn btn-sm btn-outline-dark">Rencontre vierge</button>
+            <a href="/" class="alert-link ms-2">Quitter le mode debug</a>
+        </div>
+        {% endif %}
         <h1 contenteditable="true" class="text-center my-4">Nom de la rencontre</h1>
+        <div class="d-flex justify-content-center align-items-center gap-2 mb-3 flex-wrap">
+            <input type="url" id="tenupUrlInput" class="form-control form-control-sm" style="max-width: 480px;" placeholder="URL officielle Ten'Up de la rencontre (https://tenup.fft.fr/...)">
+            <a id="tenupUrlLink" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary disabled" aria-disabled="true">Ouvrir Ten'Up ↗</a>
+        </div>
         <div class="text-center mb-4">
             <button id="toggleView" class="btn btn-primary">Vue Condensée</button>
-            <button id="exportBtn" class="btn btn-success">Exporter</button>
+            <button id="exportBtn" class="btn btn-success">Exporter une rencontre</button>
             <input type="file" id="importFile" class="d-none">
-            <button id="importBtn" class="btn btn-info">Importer</button>
+            <button id="importBtn" class="btn btn-info">Importer une rencontre</button>
+            {% if not debug %}
+            <button id="resetMatchBtn" class="btn btn-outline-danger ms-2">Nouvelle rencontre</button>
+            {% endif %}
         </div>
 
         <div class="row">
@@ -29,10 +44,12 @@
         <div class="row mt-4">
             <div class="col-md-6">
                 <h2 contenteditable="true">Equipe 1</h2>
+                <div id="team1Roster" class="small text-muted mb-2"></div>
                 <div id="team1" class="list-group d-flex flex-row flex-wrap"></div>
             </div>
             <div class="col-md-6">
                 <h2 contenteditable="true">Equipe 2</h2>
+                <div id="team2Roster" class="small text-muted mb-2"></div>
                 <div id="team2" class="list-group d-flex flex-row flex-wrap"></div>
             </div>
         </div>

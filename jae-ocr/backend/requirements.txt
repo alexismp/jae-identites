@@ -1,9 +1,5 @@
 Flask
-python-dotenv
-google-generativeai
+google-genai
 pillow
 gunicorn
 google-cloud-storage
-cloudevents
-functions-framework
-starlette==1.0.1

@@ -98,6 +98,35 @@ document.addEventListener('DOMContentLoaded', function () {
     var exportBtn = document.getElementById('exportBtn');
     var importBtn = document.getElementById('importBtn');
     var importFile = document.getElementById('importFile');
+    var tenupUrlInput = document.getElementById('tenupUrlInput');
+    var tenupUrlLink = document.getElementById('tenupUrlLink');
+    const TENUP_URL_STORAGE_KEY = 'jae_tenup_match_url';
+
+    function updateTenupLink(urlValue) {
+        const trimmed = (urlValue || '').trim();
+        const isValid = /^https?:\/\/.+/i.test(trimmed);
+        if (tenupUrlLink) {
+            if (isValid) {
+                tenupUrlLink.href = trimmed;
+                tenupUrlLink.classList.remove('disabled');
+                tenupUrlLink.setAttribute('aria-disabled', 'false');
+            } else {
+                tenupUrlLink.href = '#';
+                tenupUrlLink.classList.add('disabled');
+                tenupUrlLink.setAttribute('aria-disabled', 'true');
+            }
+        }
+    }
+
+    if (tenupUrlInput) {
+        const savedUrl = localStorage.getItem(TENUP_URL_STORAGE_KEY) || '';
+        tenupUrlInput.value = savedUrl;
+        updateTenupLink(savedUrl);
+        tenupUrlInput.addEventListener('input', function () {
+            localStorage.setItem(TENUP_URL_STORAGE_KEY, tenupUrlInput.value.trim());
+            updateTenupLink(tenupUrlInput.value);
+        });
+    }
 
     exportBtn.addEventListener('click', function () {
         var h1Text = h1Element.textContent.trim().replace(/ /g, '_');
@@ -105,6 +134,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         var data = {
             title: h1Element.textContent.trim(),
+            tenupUrl: tenupUrlInput ? tenupUrlInput.value.trim() : '',
             team1Name: team1Title.textContent.trim(),
             team2Name: team2Title.textContent.trim(),
             officials: getSectionData(officials),
@@ -134,10 +164,15 @@ document.addEventListener('DOMContentLoaded', function () {
                 try {
                     var data = JSON.parse(e.target.result);
 
-                    // Update titles
+                    // Update titles & Ten'Up URL
                     h1Element.textContent = data.title;
                     team1Title.textContent = data.team1Name;
                     team2Title.textContent = data.team2Name;
+                    if (tenupUrlInput) {
+                        tenupUrlInput.value = data.tenupUrl || '';
+                        localStorage.setItem(TENUP_URL_STORAGE_KEY, tenupUrlInput.value);
+                        updateTenupLink(tenupUrlInput.value);
+                    }
 
                     // Clear existing sections
                     officials.innerHTML = '';
@@ -213,8 +248,77 @@ document.addEventListener('DOMContentLoaded', function () {
         return card;
     }
 
-    // Polling logic
+    const isDebugMode = (new URLSearchParams(window.location.search).get('debug') || '').toLowerCase() === 'true';
+
+    function clearBoardUi() {
+        officials.innerHTML = '';
+        team1.innerHTML = '';
+        team2.innerHTML = '';
+        unassigned.innerHTML = '';
+        team1Title.textContent = 'Equipe 1';
+        team2Title.textContent = 'Equipe 2';
+        if (tenupUrlInput) {
+            tenupUrlInput.value = '';
+            localStorage.removeItem(TENUP_URL_STORAGE_KEY);
+            updateTenupLink('');
+        }
+        updateH1();
+    }
+
+    var loadTestDataBtn = document.getElementById('loadTestDataBtn');
+    if (loadTestDataBtn) {
+        loadTestDataBtn.addEventListener('click', function () {
+            loadTestDataBtn.disabled = true;
+            fetch('/api/test-data')
+                .then(response => {
+                    if (!response.ok) throw new Error('Erreur serveur (' + response.status + ')');
+                    return response.json();
+                })
+                .then(data => {
+                    clearBoardUi();
+                    data.forEach(participant => {
+                        unassigned.appendChild(createParticipantCard(participant));
+                    });
+                })
+                .catch(err => alert('Impossible de charger le jeu de test : ' + err.message))
+                .finally(() => {
+                    loadTestDataBtn.disabled = false;
+                });
+        });
+    }
+
+    var clearDebugMatchBtn = document.getElementById('clearDebugMatchBtn');
+    if (clearDebugMatchBtn) {
+        clearDebugMatchBtn.addEventListener('click', function () {
+            clearBoardUi();
+        });
+    }
+
+    var resetMatchBtn = document.getElementById('resetMatchBtn');
+    if (resetMatchBtn) {
+        resetMatchBtn.addEventListener('click', function () {
+            if (!confirm("Archiver les résultats actuels et repartir d'une rencontre vierge ?")) {
+                return;
+            }
+            resetMatchBtn.disabled = true;
+            fetch('/api/reset-match', { method: 'POST' })
+                .then(response => {
+                    if (!response.ok) throw new Error('Erreur serveur (' + response.status + ')');
+                    return response.json();
+                })
+                .then(() => {
+                    clearBoardUi();
+                })
+                .catch(err => alert('Impossible de réinitialiser la rencontre : ' + err.message))
+                .finally(() => {
+                    resetMatchBtn.disabled = false;
+                });
+        });
+    }
+
+    // Polling logic (désactivé en mode debug pour préserver la rencontre vierge ou le jeu de test chargé)
     function pollParticipants() {
+        if (isDebugMode) return;
         fetch('/api/participants')
             .then(response => response.json())
             .then(data => {
@@ -252,7 +356,54 @@ document.addEventListener('DOMContentLoaded', function () {
             .catch(error => console.error('Error polling participants:', error));
     }
 
+    var team1Roster = document.getElementById('team1Roster');
+    var team2Roster = document.getElementById('team2Roster');
+
+    function renderTeamRoster(container, players) {
+        if (!container) return;
+        if (!players || !players.length) {
+            container.innerHTML = '';
+            return;
+        }
+        const badges = players.map(p => {
+            const label = [p.prenom, p.nom, p.classement ? `(${p.classement})` : ''].filter(Boolean).join(' ');
+            return `<span class="badge bg-light text-dark border me-1 mb-1">${label}</span>`;
+        }).join('');
+        container.innerHTML = `<div class="mb-1"><strong>Liste Ten'Up (${players.length}) :</strong></div>${badges}`;
+    }
+
+    function pollTenupRoster() {
+        if (isDebugMode) return;
+        fetch('/api/tenup/roster')
+            .then(r => r.json())
+            .then(roster => {
+                if (!roster || (!roster.team1Players && !roster.team2Players)) {
+                    renderTeamRoster(team1Roster, []);
+                    renderTeamRoster(team2Roster, []);
+                    return;
+                }
+                if (roster.tenupUrl && tenupUrlInput && !tenupUrlInput.value.trim()) {
+                    tenupUrlInput.value = roster.tenupUrl;
+                    localStorage.setItem(TENUP_URL_STORAGE_KEY, roster.tenupUrl);
+                    updateTenupLink(roster.tenupUrl);
+                }
+                if (roster.team1Name && team1Title.textContent.trim() === 'Equipe 1') {
+                    team1Title.textContent = roster.team1Name;
+                    updateH1();
+                }
+                if (roster.team2Name && team2Title.textContent.trim() === 'Equipe 2') {
+                    team2Title.textContent = roster.team2Name;
+                    updateH1();
+                }
+                renderTeamRoster(team1Roster, roster.team1Players || []);
+                renderTeamRoster(team2Roster, roster.team2Players || []);
+            })
+            .catch(err => console.error('Error polling TenUp roster:', err));
+    }
+
     // Poll every 5 seconds
+    pollTenupRoster();
     setInterval(pollParticipants, 5000);
+    setInterval(pollTenupRoster, 10000);
 
 });
