@@ -40,7 +40,7 @@ class MlKitTextPostCaptureValidator(
 
     companion object {
         private val FFT_LICENCE_REGEX = Regex("\\b\\d{7}\\s?[A-Z]\\b")
-        private val FFT_KEYWORDS = listOf("FFT", "LICENCE", "CLASSEMENT", "TENNIS", "TEN'UP", "TENUP", "CLUB")
+        private val FFT_KEYWORDS = listOf("FFT", "LICENCE", "CLASSEMENT", "TENNIS", "TEN'UP", "TENUP")
         private val FORBIDDEN_DOC_KEYWORDS = listOf(
             "PERMIS DE CONDUIRE",
             "DRIVING LICENCE",
@@ -60,11 +60,27 @@ class MlKitTextPostCaptureValidator(
         )
         private val ID_KEYWORDS = listOf(
             "CARTE NATIONALE",
+            "D'IDENTITE",
+            "D'IDENTITÉ",
+            "IDENTITE",
+            "IDENTITÉ",
             "REPUBLIQUE FRANCAISE",
             "RÉPUBLIQUE FRANÇAISE",
             "PASSEPORT",
             "PASSPORT",
             "IDENTITY CARD",
+            "SURNAME",
+            "GIVEN NAMES",
+            "DATE DE NAISS",
+            "LIEU DE NAISSANCE",
+            "NOM D'USAGE",
+            "DATE D'EXPIR",
+            "DATE DE DELIVRANCE",
+            "DATE DE DÉLIVRANCE",
+            "DU DOCUMENT",
+            "IDFRA",
+            "I<FRA",
+            "P<FRA",
             "PERSONALAUSWEIS",
             "REISEPASS",
             "CARTA D'IDENTITA",
@@ -128,10 +144,11 @@ class MlKitTextPostCaptureValidator(
                 )
             }
 
-            if (hasIdentityKeywords(rawText) && !hasFftKeywords(rawText)) {
+            val looksLikeMrz = rawText.contains("<<")
+            if ((hasIdentityKeywords(rawText) || looksLikeMrz) && !hasFftKeywords(rawText)) {
                 return PostCaptureResult(
                     isValid = true,
-                    message = "Pièce d'identité détectée (sans MRZ visible)",
+                    message = "Pièce d'identité détectée (analyse serveur)",
                     detectedKind = DetectedDocumentKind.IDENTITY,
                     detectedTextChars = charCount
                 )
@@ -140,7 +157,7 @@ class MlKitTextPostCaptureValidator(
             // 2. Sinon : branche Licence FFT / écran Ten'Up (peu importe l'orientation)
             val licenceNo = findFftLicenceNumber(rawText)
             return when {
-                licenceNo != null -> PostCaptureResult(
+                licenceNo != null && hasFftKeywords(rawText) -> PostCaptureResult(
                     isValid = true,
                     message = "Licence FFT détectée : $licenceNo",
                     detectedKind = DetectedDocumentKind.LICENCE_TENUP,
@@ -153,10 +170,17 @@ class MlKitTextPostCaptureValidator(
                     detectedKind = DetectedDocumentKind.LICENCE_TENUP,
                     detectedTextChars = charCount
                 )
+                licenceNo != null -> PostCaptureResult(
+                    isValid = true,
+                    message = "Licence FFT détectée : $licenceNo",
+                    detectedKind = DetectedDocumentKind.LICENCE_TENUP,
+                    detectedTextChars = charCount,
+                    detectedLicenceNumber = licenceNo
+                )
                 else -> PostCaptureResult(
                     isValid = true,
-                    message = "Document lisible ($charCount car., envoi OCR)",
-                    detectedKind = DetectedDocumentKind.LICENCE_TENUP,
+                    message = "Document capturé ($charCount car., analyse serveur)",
+                    detectedKind = DetectedDocumentKind.IDENTITY,
                     detectedTextChars = charCount
                 )
             }

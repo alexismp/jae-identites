@@ -3,6 +3,7 @@ package com.jae.scanner.ui
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.net.Uri
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
@@ -215,14 +216,24 @@ fun ScannerScreen(authRevision: Int = 0) {
             ContextCompat.getMainExecutor(context),
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
-                    val bitmap = imageProxyToBitmap(image)
+                    val fullBitmap = imageProxyToBitmap(image)
                     image.close()
 
-                    if (bitmap == null) {
+                    if (fullBitmap == null) {
                         toastMessage = "Erreur de décodage de l'image."
                         logAction("Erreur capture", "Impossible de décoder l'image", isSuccess = false, isError = true)
                         isCapturing = false
                         return
+                    }
+
+                    val pv = previewViewRef
+                    val bitmap = cropToScanGuide(
+                        bitmap = fullBitmap,
+                        previewWidth = pv?.width ?: 0,
+                        previewHeight = pv?.height ?: 0
+                    )
+                    if (bitmap !== fullBitmap) {
+                        fullBitmap.recycle()
                     }
 
                     // Libérer immédiatement le bouton de capture pour enchaîner les scans sans latence !
@@ -702,7 +713,45 @@ private fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
     val buffer = image.planes.firstOrNull()?.buffer ?: return null
     val bytes = ByteArray(buffer.remaining())
     buffer.get(bytes)
-    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    val raw = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+    val rotation = image.imageInfo.rotationDegrees
+    if (rotation == 0) return raw
+    val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+    val rotated = Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, matrix, true)
+    if (rotated !== raw) {
+        raw.recycle()
+    }
+    return rotated
+}
+
+/**
+ * Recadre la photo capturée exactement sur le cadre de guidage visible à l'écran (AutoDocumentOverlay),
+ * en tenant compte du mode FILL_CENTER de PreviewView, afin de ne jamais lire une carte au-dessus ou en dessous.
+ */
+private fun cropToScanGuide(bitmap: Bitmap, previewWidth: Int, previewHeight: Int): Bitmap {
+    val bmpW = bitmap.width.toFloat()
+    val bmpH = bitmap.height.toFloat()
+    if (bmpW <= 0f || bmpH <= 0f) return bitmap
+
+    val pvW = if (previewWidth > 0) previewWidth.toFloat() else bmpW
+    val pvH = if (previewHeight > 0) previewHeight.toFloat() else bmpH
+
+    val isLandscape = pvW > pvH
+    val targetAspectRatio = 1.52f
+    val maxWidth = pvW * if (isLandscape) 0.62f else 0.88f
+    val maxHeight = pvH * if (isLandscape) 0.70f else 0.50f
+    val rectW = minOf(maxWidth, maxHeight * targetAspectRatio)
+    val rectH = rectW / targetAspectRatio
+
+    // PreviewView FILL_CENTER : l'image est mise à l'échelle par max(pvW/bmpW, pvH/bmpH) puis centrée
+    val scale = maxOf(pvW / bmpW, pvH / bmpH)
+    // Marge de sécurité légère (+2%) pour ne pas rogner les bords du document, sans déborder sur la carte voisine
+    val cropW = ((rectW / scale) * 1.02f).toInt().coerceIn(1, bitmap.width)
+    val cropH = ((rectH / scale) * 1.02f).toInt().coerceIn(1, bitmap.height)
+    val left = ((bitmap.width - cropW) / 2).coerceIn(0, (bitmap.width - cropW).coerceAtLeast(0))
+    val top = ((bitmap.height - cropH) / 2).coerceIn(0, (bitmap.height - cropH).coerceAtLeast(0))
+
+    return Bitmap.createBitmap(bitmap, left, top, cropW, cropH)
 }
 
 private fun bitmapToJpeg(bitmap: Bitmap, maxDimension: Int = 1600, quality: Int = 82): ByteArray {

@@ -109,4 +109,33 @@ class MrzParserTest {
         assertEquals("CHARLOTTE ANN", parsed.givenNames)
         assertTrue(parsed.checkDigitsValid)
     }
+
+    @Test
+    fun classifiesNewFrenchCnieRectoAndVersoAsIdentityNotLicence() {
+        val cnieRecto = """
+            NOM / Surname
+            DUPONT
+            PRÉNOMS / Given names
+            Chloé Marie
+            SEXE / Sex  NATIONALITÉ  DATE DE NAISS.
+            F           FRA          14 06 1995
+            N° DU DOCUMENT  DATE D'EXPIR.
+            X4RTBPFW4       12 05 2033
+        """.trimIndent()
+        val rectoRes = MlKitTextPostCaptureValidator.classifyText(cnieRecto)
+        assertTrue(rectoRes.isValid)
+        assertEquals(DetectedDocumentKind.IDENTITY, rectoRes.detectedKind)
+
+        val cnieVersoNoisyMrz = """
+            TAILLE 1,68 m
+            DATE DE DÉLIVRANCE 12 05 2023
+            ADRESSE 12 RUE DE LA PAIX PARIS
+            IDFRAX4RTBPFW41<<<<<<<<<<<<<<<
+            9506143F3305121FRA<<<<<<<<<<<2
+            DUPONT<<CHLOE<MARIE<<<<<<<<<<<
+        """.trimIndent()
+        val versoRes = MlKitTextPostCaptureValidator.classifyText(cnieVersoNoisyMrz)
+        assertTrue(versoRes.isValid)
+        assertEquals(DetectedDocumentKind.IDENTITY, versoRes.detectedKind)
+    }
 }
