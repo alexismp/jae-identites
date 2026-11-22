@@ -416,6 +416,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const anneeValiditeEl = item.querySelector('.card-annee');
             const clubEl = item.querySelector('.card-club');
             const statutEl = item.querySelector('.card-statut');
+            const competenceEl = item.querySelector('.card-competence-val');
             const idCheckedEl = item.querySelector('input[type="checkbox"]');
             const imageUriEl = item.querySelector('a');
 
@@ -428,6 +429,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 annee_validite: anneeValiditeEl ? anneeValiditeEl.textContent.replace('Année validité:', '').trim() : '',
                 club: clubEl ? clubEl.textContent.replace('Club:', '').trim() : '',
                 statut: statutEl ? statutEl.textContent.replace('Statut:', '').trim() : '',
+                niveau_competence: competenceEl ? competenceEl.textContent.trim() : null,
                 id_checked: idCheckedEl ? idCheckedEl.checked : false,
                 image_uri: imageUriEl ? imageUriEl.href : null
             };
@@ -455,6 +457,7 @@ document.addEventListener('DOMContentLoaded', function () {
             <p class="card-detail card-annee"><strong>Année validité:</strong> ${participant.annee_validite}</p>
             <p class="card-detail card-club"><strong>Club:</strong> ${participant.club}</p>
             <p class="card-detail card-statut"><strong>Statut:</strong> ${participant.statut}</p>
+            ${participant.niveau_competence ? `<p class="card-detail card-competence"><strong>Qualification:</strong> <span class="badge bg-info text-dark card-competence-val">${participant.niveau_competence}</span></p>` : ''}
             <div class="form-check card-detail">
                 <input class="form-check-input" type="checkbox" ${participant.id_checked ? 'checked' : ''}>
                 <label class="form-check-label">Pièce d'identité</label>

@@ -345,6 +345,7 @@ def handle_storage_event(bucket_name, file_name):
                     "nom": json_data.get("nom"),
                     "prenom": json_data.get("prenom"),
                     "licence": json_data.get("licence"),
+                    "niveau_competence": json_data.get("niveau_competence"),
                     "result_file": result_filename,
                 },
             )
@@ -413,6 +414,7 @@ def build_participants_from_records(roster_data, lic_records, pid_records):
             "classement": data.get("classement"),
             "club": data.get("club"),
             "statut": data.get("statut"),
+            "niveau_competence": data.get("niveau_competence"),
             "id_checked": False,
             "image_uri": gs_uri_to_https(data.get("image_uri")),
         }
@@ -523,6 +525,7 @@ def get_participants_data():
                 "classement": data.get("classement"),
                 "club": data.get("club"),
                 "statut": data.get("statut"),
+                "niveau_competence": data.get("niveau_competence"),
                 "id_checked": False,
                 "image_uri": gs_uri_to_https(data.get("image_uri")),
             }
