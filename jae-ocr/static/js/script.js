@@ -800,6 +800,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const loginModal = document.getElementById('loginModal');
         const pendingApprovalBox = document.getElementById('pendingApprovalBox');
         const boardContainer = document.getElementById('boardContainer');
+        const userMenu = document.getElementById('userMenu');
         const userBadge = document.getElementById('userBadge');
         const signOutBtn = document.getElementById('signOutBtn');
         const adminMenuDivider = document.getElementById('adminMenuDivider');
@@ -840,16 +841,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (loginModal) loginModal.classList.remove('d-none');
                 if (pendingApprovalBox) pendingApprovalBox.classList.add('d-none');
                 if (boardContainer) boardContainer.classList.add('d-none');
-                if (userBadge) userBadge.textContent = 'Non connecté';
-                if (signOutBtn) signOutBtn.classList.add('d-none');
+                if (userBadge) userBadge.textContent = '';
+                if (userMenu) userMenu.classList.add('d-none');
                 if (adminMenuDivider) adminMenuDivider.classList.add('d-none');
                 if (adminMenuItem) adminMenuItem.classList.add('d-none');
                 return;
             }
 
             if (loginModal) loginModal.classList.add('d-none');
-            if (userBadge) userBadge.textContent = user.email;
-            if (signOutBtn) signOutBtn.classList.remove('d-none');
+            if (userBadge) userBadge.textContent = user.email || user.displayName || 'Compte';
+            if (userMenu) userMenu.classList.remove('d-none');
 
             try {
                 const meResp = await authFetch('/api/me');

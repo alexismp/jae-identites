@@ -89,8 +89,13 @@
                     </div>
 
                     {% if not debug and not demo %}
-                    <span id="userBadge" class="small text-light opacity-75 d-none d-md-inline"></span>
-                    <button id="signOutBtn" class="btn btn-sm btn-outline-light d-none">Déconnexion</button>
+                    <div id="userMenu" class="dropdown d-none">
+                        <button class="btn btn-sm btn-outline-light dropdown-toggle" type="button" id="userBadge" data-bs-toggle="dropdown" aria-expanded="false">
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow-sm" aria-labelledby="userBadge">
+                            <li><button id="signOutBtn" class="dropdown-item text-danger" type="button">Déconnexion</button></li>
+                        </ul>
+                    </div>
                     {% endif %}
                 </div>
             </div>
