@@ -245,6 +245,14 @@ body {
     display: none;
 }
 
+.condensed-view #officials .card-classement {
+    display: none;
+}
+
+.condensed-view #officials .card-competence {
+    display: block;
+}
+
 .jae-footer {
     margin-top: auto;
     padding: 0.85rem 1rem;
