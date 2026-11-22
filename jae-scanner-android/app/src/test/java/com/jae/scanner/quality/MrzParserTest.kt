@@ -138,4 +138,26 @@ class MrzParserTest {
         assertTrue(versoRes.isValid)
         assertEquals(DetectedDocumentKind.IDENTITY, versoRes.detectedKind)
     }
+
+    @Test
+    fun parsesNoisyTd1CnieVersoWithShortTrailingChevronsAndOcrDigits() {
+        val docNum = "X4RTBPFW4"
+        val docCheck = MrzParser.computeCheckDigit(docNum)
+        val dob = "900713"
+        val dobCheck = MrzParser.computeCheckDigit(dob)
+        val exp = "310211"
+        val expCheck = MrzParser.computeCheckDigit(exp)
+        // Simule ML Kit lisant "1DFRA", "O" au lieu de "0" dans la date, et tronquant des chevrons finaux
+        val l1 = "1DFRA$docNum$docCheck<<<<<<<<<<" // 25 car.
+        val l2 = "9O0713${dobCheck}F31O211${expCheck}FRA<<<<<<<<<<<0"
+        val l3 = "M0USSINE<P0UCHKINE<<ALEXANDRE" // 29 car., sans chevrons finaux
+
+        val parsed = MrzParser.parse("$l1\n$l2\n$l3")
+        assertNotNull(parsed)
+        assertEquals(MrzFormat.TD1_CNIE, parsed!!.format)
+        assertEquals("FRA", parsed.issuingCountry)
+        assertEquals("MOUSSINE POUCHKINE", parsed.surname)
+        assertEquals("ALEXANDRE", parsed.givenNames)
+        assertTrue(parsed.checkDigitsValid)
+    }
 }

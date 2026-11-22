@@ -29,7 +29,7 @@ object MrzParser {
         val candidateLines = rawText
             .lines()
             .map { normalizeMrzLine(it) }
-            .filter { it.length >= 28 && it.contains('<') }
+            .filter { it.length >= 22 && it.contains('<') }
 
         if (candidateLines.size < 2) return null
 
@@ -100,16 +100,19 @@ object MrzParser {
 
     private fun parseTd1(lines: List<String>): MrzData? {
         for (i in 0 until lines.size - 2) {
-            val l1 = fitLength(lines[i], 30) ?: continue
-            val l2 = fitLength(lines[i + 1], 30) ?: continue
-            val l3 = fitLength(lines[i + 2], 30) ?: continue
+            val l1Raw = lines[i].let { if (it.startsWith("1D")) "ID" + it.substring(2) else it }
+            val l1 = fitLength(l1Raw, 30, tolerance = 6) ?: continue
+            val l2 = fitLength(lines[i + 1], 30, tolerance = 4) ?: continue
+            val l3 = fitLength(lines[i + 2], 30, tolerance = 8) ?: continue
             if (!(l1.startsWith("ID") || l1.startsWith("I<"))) continue
 
             val country = l1.substring(2, 5).replace("<", "")
             val docNumber = l1.substring(5, 14).replace("<", "")
             val docValid = verifyCheckDigit(l1.substring(5, 14), l1[14])
-            val dobValid = verifyCheckDigit(l2.substring(0, 6), l2[6])
-            val expValid = verifyCheckDigit(l2.substring(8, 14), l2[14])
+            val dobField = sanitizeMrzDigits(l2.substring(0, 6))
+            val dobValid = verifyCheckDigit(dobField, l2[6])
+            val expField = sanitizeMrzDigits(l2.substring(8, 14))
+            val expValid = verifyCheckDigit(expField, l2[14])
             val (surname, givenNames) = splitNameField(l3)
             if (surname.isBlank()) continue
 
@@ -134,14 +137,25 @@ object MrzParser {
             .replace(Regex("[^A-Z0-9<]"), "")
     }
 
-    private fun fitLength(line: String, expected: Int): String? {
+    private fun fitLength(line: String, expected: Int, tolerance: Int = 2): String? {
         return when {
             line.length == expected -> line
-            line.length in (expected - 2)..(expected + 2) -> {
+            line.length in (expected - tolerance)..(expected + tolerance) -> {
                 if (line.length < expected) line.padEnd(expected, '<') else line.substring(0, expected)
             }
             else -> null
         }
+    }
+
+    private fun sanitizeMrzDigits(field: String): String {
+        return field
+            .replace('O', '0')
+            .replace('Q', '0')
+            .replace('I', '1')
+            .replace('L', '1')
+            .replace('S', '5')
+            .replace('B', '8')
+            .replace('Z', '2')
     }
 
     private fun sanitizeMrzName(field: String): String {
@@ -179,7 +193,8 @@ object MrzParser {
     }
 
     internal fun verifyCheckDigit(data: String, expectedChar: Char): Boolean {
-        if (expectedChar !in '0'..'9') return false
-        return computeCheckDigit(data) == (expectedChar - '0')
+        val normExpected = sanitizeMrzDigits(expectedChar.toString()).firstOrNull() ?: return false
+        if (normExpected !in '0'..'9') return false
+        return computeCheckDigit(data) == (normExpected - '0')
     }
 }
