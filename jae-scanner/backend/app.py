@@ -1,8 +1,11 @@
 from datetime import datetime, timezone
 import io
+import json
 import logging
 import os
 import subprocess
+import urllib.error
+import urllib.request
 import uuid
 
 from flask import Flask, jsonify, render_template, request
@@ -14,7 +17,7 @@ from werkzeug.utils import secure_filename
 logging.basicConfig(level=logging.INFO)
 
 SCAN_BUCKET_NAME = os.getenv("SCAN_BUCKET_NAME", "jae-scan-bucket")
-SCANNER_API_KEY = os.getenv("SCANNER_API_KEY")
+JAE_OCR_URL = os.getenv("JAE_OCR_URL", "https://jae-ocr-2500276981.europe-west1.run.app").rstrip("/")
 
 # Initialiser Flask pour servir les fichiers statiques depuis le dossier 'static'
 # et les templates depuis le dossier 'templates'
@@ -22,22 +25,45 @@ app = Flask(__name__, static_folder="static", template_folder="templates")
 CORS(app)
 
 
-def is_authorized_request():
-    """Vérifie la clé API partagée si SCANNER_API_KEY est configurée."""
-    if not SCANNER_API_KEY:
-        return True
-    provided = request.headers.get("X-API-Key")
-    if not provided:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            provided = auth_header[7:].strip()
-    return provided == SCANNER_API_KEY
+def verify_user_and_active_match():
+    """Vérifie le jeton Firebase via jae-ocr /api/me et retourne (user_email, match_id, err_response)."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer ") or not auth_header[7:].strip():
+        return None, None, (jsonify({"error": "Authentification Google requise"}), 401)
+
+    req = urllib.request.Request(
+        f"{JAE_OCR_URL}/api/me",
+        headers={"Authorization": auth_header},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            return None, None, (jsonify({"error": "Session expirée ou non autorisée"}), 401)
+        logging.error(f"Erreur vérification /api/me ({e.code}): {e}")
+        return None, None, (jsonify({"error": "Échec de vérification de session"}), 502)
+    except Exception as e:
+        logging.error(f"Erreur réseau vérification /api/me : {e}")
+        return None, None, (jsonify({"error": "Service d'authentification indisponible"}), 502)
+
+    if not data.get("approved"):
+        return None, None, (jsonify({"error": "Compte en attente de validation par l'administrateur."}), 403)
+
+    active_match = data.get("activeMatch") or {}
+    match_id = (active_match.get("matchId") or "").strip()
+    if not match_id:
+        return None, None, (jsonify({"error": "Aucune rencontre active trouvée pour ce compte."}), 400)
+
+    user_email = (data.get("user") or {}).get("email") or ""
+    return user_email, match_id, None
 
 
 @app.route("/")
 def index():
     build_info = get_build_info()
-    return render_template("index.html", build_info=build_info)
+    return render_template("index.html", build_info=build_info, jae_ocr_url=JAE_OCR_URL)
 
 
 def get_build_info():
@@ -66,8 +92,9 @@ def get_build_info():
 
 @app.route("/scan", methods=["POST"])
 def scan_image():
-    if not is_authorized_request():
-        return jsonify({"error": "Non autorisé"}), 401
+    user_email, match_id, err = verify_user_and_active_match()
+    if err:
+        return err
 
     if "file" not in request.files:
         return jsonify({"error": "Aucun fichier n'a été envoyé"}), 400
@@ -82,7 +109,7 @@ def scan_image():
         if not img_bytes:
             return jsonify({"error": "Le fichier envoyé est vide"}), 400
 
-        logging.info(f"Taille du fichier '{file.filename}' reçu : {len(img_bytes)} bytes")
+        logging.info(f"Taille du fichier '{file.filename}' reçu de {user_email} (match {match_id}) : {len(img_bytes)} bytes")
         img = Image.open(io.BytesIO(img_bytes))
         img.verify()
     except Exception as e:
@@ -91,7 +118,7 @@ def scan_image():
 
     safe_name = secure_filename(file.filename) or "capture.jpg"
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
-    unique_filename = f"{timestamp}-{uuid.uuid4().hex[:8]}-{safe_name}"
+    unique_filename = f"m_{match_id}/{timestamp}-{uuid.uuid4().hex[:8]}-{safe_name}"
 
     try:
         storage_client = storage.Client()
@@ -103,7 +130,7 @@ def scan_image():
         logging.error(f"Erreur lors de l'upload sur Google Cloud Storage : {e}")
         return jsonify({"error": f"Échec de l'upload vers Cloud Storage : {str(e)}"}), 502
 
-    return jsonify({"uploaded_file": unique_filename}), 200
+    return jsonify({"uploaded_file": unique_filename, "match_id": match_id}), 200
 
 
 if __name__ == "__main__":
