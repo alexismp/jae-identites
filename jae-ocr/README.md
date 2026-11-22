@@ -11,6 +11,10 @@ Tableau de bord web de gestion de la rencontre par équipes et service backend r
 - **Synchronisation multi-écrans** : chaque glisser-déposer, titre ou lien Ten'Up est partagé automatiquement entre tous les ordinateurs/tablettes connectés.
 - **Accès sécurisé & multi-rencontres en parallèle** : authentification nominative (Firebase Auth) avec validation préalable par l'administrateur, **une seule rencontre active par JAE à la fois**, et URL dédiée `/m/<matchId>` qui survit au rafraîchissement de la page.
 - **Console d'administration séparée (`/admin`)** : URL dédiée (hors interface de rencontre) permettant à l'administrateur (`alexis.mp@gmail.com` par défaut, extensible dynamiquement dans Firestore) d'approuver/bloquer les utilisateurs, promouvoir d'autres administrateurs, consulter/archiver/nettoyer toutes les rencontres et analyser l'historique d'activité et les erreurs.
+- **Lien optionnel vers le scanner web de secours** : accessible directement depuis la barre d'outils du tableau de bord (`Scanner web (secours) ↗`).
+- **Mode Démo interactif (`/demo`)** : permet de tester l'ensemble du parcours (import Ten'Up, scan CNI MRZ sans LLM, remplaçant/officiel, rejet permis de conduire, protection glisser-déposer) sans connexion ni écriture serveur.
+
+![Tableau de bord JAE-OCR](../docs/screenshots/ocr-demo.png)
 - **Gestion de rencontre** : lien cliquable vers la feuille Ten'Up, **Exporter / Importer une rencontre** (JSON), **Nouvelle rencontre** (archivage automatique dans Firestore) et **Mode Debug** (`?debug=true`) isolé pour les essais.
 
 ---
