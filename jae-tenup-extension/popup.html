@@ -53,14 +53,30 @@
     }
     .ok { color: #15803d; }
     .err { color: #b91c1c; }
+    #openOcrLink {
+      display: none;
+      margin-top: 10px;
+      text-align: center;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+      background: #15803d;
+      border-radius: 6px;
+      text-decoration: none;
+    }
   </style>
 </head>
 <body>
-  <h1>JAE Ten'Up → JAE-OCR</h1>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+    <img src="icons/logo.svg" alt="JAE Identités" width="32" height="32">
+    <h1 style="margin:0;">JAE Ten'Up → JAE-OCR</h1>
+  </div>
   <label for="ocrUrl">URL du service JAE-OCR</label>
   <input id="ocrUrl" type="url" value="https://jae-ocr-2500276981.europe-west1.run.app">
   <button id="extractBtn">Extraire les 2 équipes vers JAE-OCR</button>
   <div id="status">Ouvre une page de rencontre Ten'Up puis clique sur le bouton.</div>
+  <a id="openOcrLink" href="https://jae-ocr-2500276981.europe-west1.run.app" target="_blank" rel="noopener noreferrer">Ouvrir la page JAE-OCR ↗</a>
   <script src="popup.js"></script>
 </body>
 </html>
