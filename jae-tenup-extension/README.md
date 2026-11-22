@@ -7,6 +7,7 @@ Extension Chrome permettant au Juge-Arbitre d'importer en un clic la composition
 - **Import en 1 clic depuis votre session Ten'Up** : ouvrez la page officielle de la rencontre sur `tenup.fft.fr` puis cliquez sur l'icône **JAE** et sur *« Extraire les 2 équipes vers JAE-OCR »*.
 - **Aucune capture d'écran ni IA externe** : la lecture des deux équipes se fait directement dans votre navigateur, sans envoyer de page ni d'image à un LLM.
 - **Ouverture automatique du tableau de bord** : dès que les deux équipes sont importées, un nouvel onglet s'ouvre automatiquement sur votre tableau **JAE-OCR** (avec les deux clubs déjà nommés et les joueurs prêts dans *Non-affecté*).
+- **Connexion Juge-Arbitre intégrée** : connectez-vous une fois avec votre compte JAE dans la popup ; l'import est automatiquement rattaché à votre rencontre active (avec option pour démarrer une nouvelle rencontre) et ouvre directement l'URL `/m/<matchId>` correspondante.
 - **Interface propre à chaque utilisation** : le statut d'une exécution précédente est automatiquement effacé à la réouverture suivante de l'extension.
 
 ## Installation dans Chrome

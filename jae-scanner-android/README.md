@@ -9,7 +9,8 @@ Application mobile Android dédiée au contrôle rapide des pièces d'identité 
 - **Refus immédiat des pièces non autorisées** : seuls les **CNI et passeports** sont acceptés ; les permis de conduire et titres/cartes de séjour sont rejetés immédiatement à l'écran.
 - **Enchaînement rapide des scans** : la prise de vue libère immédiatement le bouton pour scanner plusieurs joueurs à la suite sans attendre le réseau.
 - **Aide au cadrage et à l'éclairage** : cadre visuel qui passe au vert quand l'image est nette, contrôle **Torche / Flash auto / Off** et mise au point tactile.
-- **Historique des actions** : un appui sur le logo **JAE** en haut à gauche affiche le journal horodaté des dernières validations, envois et refus.
+- **Connexion Juge-Arbitre OAuth (sans mot de passe)** : connexion en 1 clic via OAuth (Google, Microsoft ou Apple via `/mobile-auth` → deep link `jaescanner://auth`) associant automatiquement chaque scan à votre **rencontre active unique**.
+- **Historique des actions** : un appui sur le logo **JAE** en haut à gauche affiche votre compte connecté (avec déconnexion) et le journal horodaté des dernières validations, envois et refus.
 - **Analyse de secours automatique** : si la bande MRZ est absente ou illisible (ex. recto seul de nouvelle CNIe, licence FFT), l'application compresse automatiquement la photo et l'envoie au serveur pour reconnaissance.
 
 ---

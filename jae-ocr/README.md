@@ -9,21 +9,29 @@ Tableau de bord web de gestion de la rencontre par équipes et service backend r
 - **Protection contre les erreurs** : les noms de clubs importés de Ten'Up sont verrouillés (ils ne sont plus écrasés par un glisser-déposer) et il est impossible de déposer une joueuse ou un joueur dans la colonne de l'équipe adverse.
 - **Contrôle réglementaire strict** : seuls les **CNI et passeports** sont acceptés (permis de conduire et titres de séjour refusés) ; une pièce d'identité seule sans licence ni présence dans la liste Ten'Up (ex. officiel) attend sa licence avant de créer une fiche.
 - **Synchronisation multi-écrans** : chaque glisser-déposer, titre ou lien Ten'Up est partagé automatiquement entre tous les ordinateurs/tablettes connectés.
-- **Gestion de rencontre** : lien cliquable vers la feuille Ten'Up, **Exporter / Importer une rencontre** (JSON), **Nouvelle rencontre** (archivage propre) et **Mode Debug** (`?debug=true`) isolé pour les essais.
+- **Accès sécurisé & multi-rencontres en parallèle** : authentification nominative (Firebase Auth) avec validation préalable par l'administrateur, **une seule rencontre active par JAE à la fois**, et URL dédiée `/m/<matchId>` qui survit au rafraîchissement de la page.
+- **Console d'administration séparée (`/admin`)** : URL dédiée (hors interface de rencontre) permettant à l'administrateur (`alexis.mp@gmail.com` par défaut, extensible dynamiquement dans Firestore) d'approuver/bloquer les utilisateurs, promouvoir d'autres administrateurs, consulter/archiver/nettoyer toutes les rencontres et analyser l'historique d'activité et les erreurs.
+- **Gestion de rencontre** : lien cliquable vers la feuille Ten'Up, **Exporter / Importer une rencontre** (JSON), **Nouvelle rencontre** (archivage automatique dans Firestore) et **Mode Debug** (`?debug=true`) isolé pour les essais.
 
 ---
 
 ## Détails techniques
 
+### Modèle Cloud Firestore (`backend/match_store.py`)
+
+- `users/{uid}` : `email`, `role` (`"admin"` | `"user"`), `approved` (`bool`), `activeMatchId` (unicité de rencontre active par JAE).
+- `approved_emails/{email}` : pré-autorisation d'adresses avant inscription.
+- `matches/{matchId}` : `ownerUid`, `ownerEmail`, `status` (`"active"` | `"archived"`), `team1Name`, `team2Name`, `tenupUrl`, `roster`, `boardState` + sous-collections `licences`, `identities`, `scan_status`.
+- `activity_logs/{docId}` : journal historique horodaté (inscriptions, validations MRZ, imports Ten'Up, OCR Gemini, modifications tableau, actions admin, erreurs).
+
 ### Endpoints principaux (`backend/app.py`)
 
-- `POST /api/identite/direct` : **circuit court sans LLM ni photo** — reçoit `{ nom, prenom, ... }` extraits par MRZ valide sur Android, écrit `PID_<prenom>_<nom>_<uuid8>.json` dans `jae-scan-results` et retourne `matched: true/false`.
-- `GET/POST /api/tenup/roster` : lit/enregistre `ROSTER_CURRENT.json` envoyé par l'extension Chrome (sans LLM).
-- `POST /` : **fallback OCR serveur** déclenché par Eventarc GCS (`object.v1.finalized`) — ignore les événements antérieurs à `MATCH_RESET_AT.json` et les fichiers déjà `STATUS == done`, acquiert un verrou atomique `.LOCK` (`if_generation_match=0`), appelle **Vertex AI (`gemini-4-hydrogen`)** en JSON strict (`backend/prompt.txt`) avec retries `429`/`503`, refuse `non_autorise` (`permis_conduire`/`titre_sejour`).
-- `GET /` & `GET /api/participants` : tableau web + API participants avec rapprochement Unicode (`nom`, `nom_usage`, prénoms multiples, inversions).
-- `GET/POST /api/board-state` : persistance et synchronisation multi-machines (`BOARD_STATE.json`).
-- `POST /api/upload-url` & `GET /api/scan-status/<object_name>` : Signed URL v4 GCS (5 min) et suivi asynchrone pour le fallback photo Android.
-- `POST /api/reset-match` : archive les fichiers actifs sous `archive/<timestamp>/` et met à jour `MATCH_RESET_AT.json`.
+- `GET /` & `GET /m/<matchId>` : tableau web authentifié (redirection vers `/m/<activeMatchId>`).
+- `GET /api/me` & `POST /api/matches/new` : profil utilisateur, rencontre active unique et création/archivage de rencontre.
+- `GET /api/matches/<matchId>/participants`, `GET/POST /api/matches/<matchId>/roster`, `GET/POST /api/matches/<matchId>/board-state` : données et synchronisation multi-machines isolées par rencontre.
+- `GET /admin`, `GET /api/admin/overview`, `POST /api/admin/users/<uid>`, `POST /api/admin/preapprove`, `POST /api/admin/matches/<matchId>/archive`, `DELETE /api/admin/matches/<matchId>`, `POST /api/admin/cleanup-archived` : console d'administration dédiée.
+- `POST /api/identite/direct` : **circuit court sans LLM ni photo** (Android MRZ valide) rattaché automatiquement à `activeMatchId` de l'utilisateur connecté.
+- `POST /api/upload-url` & `POST /` (Eventarc) : **fallback OCR serveur** avec préfixe GCS `m_<matchId>/...` pour router les résultats Gemini (`gemini-4-hydrogen` sur Vertex AI) vers la bonne rencontre Firestore.
 
 ### Variables d'environnement
 
