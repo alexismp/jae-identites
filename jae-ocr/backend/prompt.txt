@@ -22,7 +22,7 @@ Extrais les champs par leur sens et leur format (sans supposer de position de li
 - `classement`: Uniquement l'une des valeurs officielles suivantes : `NC`, `40`, `30/5`, `30/4`, `30/3`, `30/2`, `30/1`, `30`, `15/5`, `15/4`, `15/3`, `15/2`, `15/1`, `15`, `5/6`, `4/6`, `3/6`, `2/6`, `1/6`, `0`, `-2/6`, `-4/6`, `-15`, ou `"N"` suivi d'un entier. Sinon `null`.
 - `club`: Nom du club en MAJUSCULES (sans code club ni tarif), sinon `null`.
 - `statut`: `"EQ"` ou `"NvEQ"` si explicitement présent, sinon `null` (souvent absent sur Ten'Up).
-- `niveau_competence`: Qualification d'arbitrage FFT figurant après le préfixe **`ARB :`** (ou `ARB:`) sur l'attestation de licence (ex. `"A1"`, `"A2"`, `"A3"`, `"JAE1"`, `"JAE2"`, `"JAE3"`, `"JAT1"`, ou la chaîne complète qui suit `ARB :` sans répéter le préfixe `ARB :`), sinon `null`.
+- `niveau_competence`: UNIQUEMENT la qualification d'arbitre figurant juste après le préfixe **`ARB :`** (ou `ARB:`) sur l'attestation de licence (par exemple `"A1"`, `"A2"` ou `"A3"`), sans répéter le préfixe `ARB :`. ATTENTION : si la même ligne contient ensuite un second préfixe **`JA :`** (ou `JA:`), STOPPE l'extraction avant `JA :` et n'inclus JAMAIS la qualification `JA :`. Si aucun préfixe `ARB :` n'est présent, renvoie `null`.
 - `champs_manquants`: Liste des noms de champs absents ou illisibles parmi `["nom", "prenom", "licence", "annee_validite", "classement", "club", "statut"]`.
 
 Exemple licence :

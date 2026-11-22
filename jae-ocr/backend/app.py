@@ -312,6 +312,28 @@ def handle_storage_event(bucket_name, file_name):
                 return
 
             if doc_type == "licence":
+                raw_nom = (json_data.get("nom") or "").strip()
+                raw_prenom = (json_data.get("prenom") or "").strip()
+                if not raw_nom or not raw_prenom:
+                    msg = "Attestation de licence incomplète : nom ou prénom illisible. Veuillez rescanner."
+                    logging.warning(f"Licence rejetée (nom/prénom manquant) pour {file_name} : nom={raw_nom!r}, prenom={raw_prenom!r}")
+                    record_status({"status": "error", "error": msg})
+                    match_store.log_activity(
+                        "ocr_licence_incomplete",
+                        match_id=match_id,
+                        details={"file": file_name, "nom": raw_nom or None, "prenom": raw_prenom or None},
+                        severity="error",
+                    )
+                    return
+
+                raw_comp = (json_data.get("niveau_competence") or "").strip()
+                if raw_comp:
+                    # Garder uniquement ce qui suit ARB: et stopper avant tout préfixe JA:
+                    raw_comp = re.split(r"\bJA\s*:", raw_comp, maxsplit=1, flags=re.IGNORECASE)[0]
+                    raw_comp = re.sub(r"^\s*ARB\s*:\s*", "", raw_comp, flags=re.IGNORECASE).strip(" ,;-")
+                    json_data["niveau_competence"] = raw_comp or None
+                else:
+                    json_data["niveau_competence"] = None
                 prefix = "LIC"
             elif doc_type == "identite":
                 prefix = "PID"
@@ -401,6 +423,8 @@ def build_participants_from_records(roster_data, lic_records, pid_records):
     participants = {}
 
     for blob_name, data in lic_records:
+        if not (data.get("nom") or "").strip() or not (data.get("prenom") or "").strip():
+            continue
         license_no = data.get("licence")
         participant_key = license_no or f"TEMP_{slugify_filename_part(data.get('nom'))}_{slugify_filename_part(data.get('prenom'))}"
         participants[participant_key] = {
