@@ -50,6 +50,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let isDragging = false;
     let saveTimer = null;
     let lastBoardUpdatedAt = null;
+    let latestBoardState = null;
     let team1LockedByTenup = false;
     let team2LockedByTenup = false;
     let lastDropWarningAt = 0;
@@ -189,10 +190,12 @@ document.addEventListener('DOMContentLoaded', function () {
         if (isDebugMode || isDemoMode || !currentUser || !currentMatchId) return;
         clearTimeout(saveTimer);
         saveTimer = setTimeout(() => {
+            const payload = collectBoardState();
+            latestBoardState = payload;
             authFetch(`/api/matches/${encodeURIComponent(currentMatchId)}/board-state`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(collectBoardState())
+                body: JSON.stringify(payload)
             })
                 .then(r => r.json())
                 .then(saved => {
@@ -596,6 +599,11 @@ document.addEventListener('DOMContentLoaded', function () {
                         card.remove();
                     }
                 });
+
+                // 3. Réappliquer le dernier boardState connu (évite la race condition au rafraîchissement pour les officiels)
+                if (latestBoardState && !isDragging) {
+                    applyBoardAssignments(latestBoardState);
+                }
             })
             .catch(error => console.error('Error polling participants:', error));
     }
@@ -633,6 +641,29 @@ document.addEventListener('DOMContentLoaded', function () {
             .catch(err => console.error('Error polling TenUp roster:', err));
     }
 
+    function applyBoardAssignments(state) {
+        if (!state) return;
+        const sections = { officials, team1, team2, unassigned };
+        const assignments = state.assignments || {};
+        Object.entries(assignments).forEach(([cardId, targetName]) => {
+            const targetEl = sections[targetName];
+            if (!targetEl) return;
+            const card = Array.from(document.querySelectorAll('.participant-card')).find(c => c.dataset.id === cardId);
+            if (card && card.parentElement !== targetEl) {
+                targetEl.appendChild(card);
+            }
+        });
+
+        const checkedMap = state.checked || {};
+        Object.entries(checkedMap).forEach(([cardId, isChecked]) => {
+            const card = Array.from(document.querySelectorAll('.participant-card')).find(c => c.dataset.id === cardId);
+            const cb = card ? card.querySelector('input[type="checkbox"]') : null;
+            if (cb && cb.checked !== Boolean(isChecked)) {
+                cb.checked = Boolean(isChecked);
+            }
+        });
+    }
+
     function pollBoardState() {
         if (isDebugMode || isDragging || !currentUser || !currentMatchId) return;
         authFetch(`/api/matches/${encodeURIComponent(currentMatchId)}/board-state`)
@@ -640,6 +671,7 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(state => {
                 if (!state || !state.updatedAt || state.updatedAt === lastBoardUpdatedAt) return;
                 lastBoardUpdatedAt = state.updatedAt;
+                latestBoardState = state;
 
                 let titlesChanged = false;
                 if (state.team1Name && team1Title && document.activeElement !== team1Title && team1Title.textContent.trim() !== state.team1Name) {
@@ -658,25 +690,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     updateTenupLink(state.tenupUrl);
                 }
 
-                const sections = { officials, team1, team2, unassigned };
-                const assignments = state.assignments || {};
-                Object.entries(assignments).forEach(([cardId, targetName]) => {
-                    const targetEl = sections[targetName];
-                    if (!targetEl) return;
-                    const card = Array.from(document.querySelectorAll('.participant-card')).find(c => c.dataset.id === cardId);
-                    if (card && card.parentElement !== targetEl) {
-                        targetEl.appendChild(card);
-                    }
-                });
-
-                const checkedMap = state.checked || {};
-                Object.entries(checkedMap).forEach(([cardId, isChecked]) => {
-                    const card = Array.from(document.querySelectorAll('.participant-card')).find(c => c.dataset.id === cardId);
-                    const cb = card ? card.querySelector('input[type="checkbox"]') : null;
-                    if (cb && cb.checked !== Boolean(isChecked)) {
-                        cb.checked = Boolean(isChecked);
-                    }
-                });
+                applyBoardAssignments(state);
             })
             .catch(err => console.error('Error polling board state:', err));
     }
@@ -872,6 +886,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (resolvedMatchId) {
                     setActiveMatchInUrl(resolvedMatchId, false);
                     lastBoardUpdatedAt = null;
+                    latestBoardState = null;
                     clearBoardUi();
                     pollTenupRoster();
                     pollParticipants();
