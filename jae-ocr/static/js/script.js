@@ -186,7 +186,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function scheduleSaveBoardState() {
-        if (isDebugMode || !currentUser || !currentMatchId) return;
+        if (isDebugMode || isDemoMode || !currentUser || !currentMatchId) return;
         clearTimeout(saveTimer);
         saveTimer = setTimeout(() => {
             authFetch(`/api/matches/${encodeURIComponent(currentMatchId)}/board-state`, {
@@ -437,6 +437,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     const isDebugMode = (new URLSearchParams(window.location.search).get('debug') || '').toLowerCase() === 'true';
+    const isDemoMode = (document.body.dataset.demoMode || '').toLowerCase() === 'true';
 
     function clearBoardUi() {
         officials.innerHTML = '';
@@ -660,8 +661,113 @@ document.addEventListener('DOMContentLoaded', function () {
         setInterval(pollTenupRoster, 10000);
     }
 
-    // Initialisation Firebase Auth (hors mode debug)
-    if (!isDebugMode && window.firebase && window.JAE_FIREBASE_CONFIG) {
+    // Mode Démo interactive (100 % client, sans connexion ni écriture serveur)
+    if (isDemoMode) {
+        if (resetMatchBtn) resetMatchBtn.classList.add('d-none');
+        const demoToast = document.getElementById('demoToast');
+        function showDemoToast(message, variant = 'alert-info') {
+            if (!demoToast) return;
+            demoToast.className = `alert ${variant} text-center py-2 mb-0`;
+            demoToast.textContent = message;
+            demoToast.classList.remove('d-none');
+        }
+
+        const DEMO_ROSTER = [
+            { nom: 'MOREAU', prenom: 'Claire', classement: '4/6', licence: "Ten'Up (moreau_claire)", club: 'TC RUEIL-MALMAISON 1', statut: 'EQ', expected_team_slot: 'team1', annee_validite: '2026', id_checked: false },
+            { nom: 'LAURENT', prenom: 'Camille', classement: '15/1', licence: "Ten'Up (laurent_camille)", club: 'TC RUEIL-MALMAISON 1', statut: 'EQ', expected_team_slot: 'team1', annee_validite: '2026', id_checked: false },
+            { nom: 'LEFEBVRE', prenom: 'Manon', classement: '15/3', licence: "Ten'Up (lefebvre_manon)", club: 'TC RUEIL-MALMAISON 1', statut: 'EQ', expected_team_slot: 'team1', annee_validite: '2026', id_checked: false },
+            { nom: 'GIRARD', prenom: 'Pauline', classement: '15/5', licence: "Ten'Up (girard_pauline)", club: 'TC RUEIL-MALMAISON 1', statut: 'EQ', expected_team_slot: 'team1', annee_validite: '2026', id_checked: false },
+            { nom: 'DUPONT', prenom: 'Chloé', classement: '4/6', licence: "Ten'Up (dupont_chloe)", club: 'CA MONTROUGE 1', statut: 'EQ', expected_team_slot: 'team2', annee_validite: '2026', id_checked: false },
+            { nom: 'BERNARD', prenom: 'Sophie', classement: '15/2', licence: "Ten'Up (bernard_sophie)", club: 'CA MONTROUGE 1', statut: 'EQ', expected_team_slot: 'team2', annee_validite: '2026', id_checked: false },
+            { nom: 'ROCHE', prenom: 'Julie', classement: '15/4', licence: "Ten'Up (roche_julie)", club: 'CA MONTROUGE 1', statut: 'EQ', expected_team_slot: 'team2', annee_validite: '2026', id_checked: false },
+            { nom: 'FONTAINE', prenom: 'Alice', classement: '30', licence: "Ten'Up (fontaine_alice)", club: 'CA MONTROUGE 1', statut: 'EQ', expected_team_slot: 'team2', annee_validite: '2026', id_checked: false }
+        ];
+
+        function loadDemoTenupImport() {
+            clearBoardUi();
+            team1Title.textContent = 'TC RUEIL-MALMAISON 1';
+            team2Title.textContent = 'CA MONTROUGE 1';
+            team1LockedByTenup = true;
+            team2LockedByTenup = true;
+            if (tenupUrlInput) {
+                tenupUrlInput.value = 'https://tenup.fft.fr/championnat/demo/rencontre/123456';
+                updateTenupLink(tenupUrlInput.value);
+            }
+            updateH1();
+            DEMO_ROSTER.forEach(p => unassigned.appendChild(createParticipantCard(p)));
+            showDemoToast("✓ Import Ten'Up simulé (sans LLM) : 2 équipes verrouillées et 8 joueuses prêtes dans Non-affecté. Essayez aussi de glisser une joueuse dans la mauvaise équipe !", 'alert-primary');
+        }
+
+        const demoImportBtn = document.getElementById('demoImportTenupBtn');
+        if (demoImportBtn) demoImportBtn.addEventListener('click', loadDemoTenupImport);
+
+        const demoScanMrzBtn = document.getElementById('demoScanMrzBtn');
+        if (demoScanMrzBtn) {
+            demoScanMrzBtn.addEventListener('click', () => {
+                const candidate = Array.from(unassigned.querySelectorAll('.participant-card')).find(
+                    c => (c.dataset.expectedSlot === 'team1' || c.dataset.expectedSlot === 'team2')
+                );
+                if (!candidate) {
+                    showDemoToast("Toutes les joueuses du roster Ten'Up ont déjà été validées ! Cliquez sur « 1. Simuler import Ten'Up » ou « Réinitialiser ».", 'alert-secondary');
+                    return;
+                }
+                const cb = candidate.querySelector('input[type="checkbox"]');
+                if (cb) cb.checked = true;
+                const slot = candidate.dataset.expectedSlot;
+                const targetCol = slot === 'team1' ? team1 : team2;
+                const targetName = slot === 'team1' ? team1Title.textContent.trim() : team2Title.textContent.trim();
+                targetCol.appendChild(candidate);
+                const nom = candidate.querySelector('p:nth-child(1)')?.textContent.replace('Nom:', '').trim() || '';
+                const prenom = candidate.querySelector('p:nth-child(2)')?.textContent.replace('Prénom:', '').trim() || '';
+                showDemoToast(`✓ CNI lue localement par MRZ (0,2 s · sans LLM · 0 photo envoyée) : ${prenom} ${nom} → validée et placée dans ${targetName}.`, 'alert-success');
+            });
+        }
+
+        const demoScanSubBtn = document.getElementById('demoScanSubBtn');
+        if (demoScanSubBtn) {
+            demoScanSubBtn.addEventListener('click', () => {
+                const existing = document.querySelector('.participant-card[data-id="5852868 M"]');
+                if (existing) {
+                    showDemoToast("Le remplaçant / officiel (Nicolas SEVESTRE) est déjà présent — glissez-le dans Officiels ou son équipe.", 'alert-info');
+                    return;
+                }
+                const sub = {
+                    nom: 'SEVESTRE',
+                    prenom: 'Nicolas',
+                    classement: '30/2',
+                    licence: '5852868 M',
+                    annee_validite: '2026',
+                    club: 'TC RUEIL-MALMAISON',
+                    statut: 'JAE / Officiel',
+                    id_checked: true,
+                    expected_team_slot: ''
+                };
+                unassigned.appendChild(createParticipantCard(sub));
+                showDemoToast("✓ Licence FFT + CNI scannées pour Nicolas SEVESTRE (hors liste Ten'Up) : fiche ajoutée dans Non-affecté, prête à être glissée dans Officiels ou son équipe.", 'alert-info');
+            });
+        }
+
+        const demoRejectBtn = document.getElementById('demoRejectPermisBtn');
+        if (demoRejectBtn) {
+            demoRejectBtn.addEventListener('click', () => {
+                showDemoToast("✕ Scan rejeté immédiatement sur le téléphone : Document non autorisé (Permis de conduire ou Titre de séjour). Seuls CNI et passeports sont acceptés.", 'alert-danger');
+            });
+        }
+
+        const demoResetBtn = document.getElementById('demoResetBtn');
+        if (demoResetBtn) {
+            demoResetBtn.addEventListener('click', () => {
+                clearBoardUi();
+                showDemoToast("Démo réinitialisée. Cliquez sur « 1. Simuler import Ten'Up » pour démarrer le parcours.", 'alert-secondary');
+            });
+        }
+
+        // Démarrer directement avec l'import Ten'Up chargé pour une prise en main immédiate
+        loadDemoTenupImport();
+    }
+
+    // Initialisation Firebase Auth (hors mode debug et hors mode démo)
+    if (!isDebugMode && !isDemoMode && window.firebase && window.JAE_FIREBASE_CONFIG) {
         firebase.initializeApp(window.JAE_FIREBASE_CONFIG);
         const auth = firebase.auth();
         const loginModal = document.getElementById('loginModal');
@@ -694,14 +800,6 @@ document.addEventListener('DOMContentLoaded', function () {
         const googleBtn = document.getElementById('googleSignInBtn');
         if (googleBtn) {
             googleBtn.addEventListener('click', () => signInWithOAuthProvider(new firebase.auth.GoogleAuthProvider()));
-        }
-        const msBtn = document.getElementById('microsoftSignInBtn');
-        if (msBtn) {
-            msBtn.addEventListener('click', () => signInWithOAuthProvider(new firebase.auth.OAuthProvider('microsoft.com')));
-        }
-        const appleBtn = document.getElementById('appleSignInBtn');
-        if (appleBtn) {
-            appleBtn.addEventListener('click', () => signInWithOAuthProvider(new firebase.auth.OAuthProvider('apple.com')));
         }
 
         if (signOutBtn) {

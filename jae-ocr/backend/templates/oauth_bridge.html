@@ -23,8 +23,6 @@
             <div id="bridgeSuccess" class="alert alert-success py-2 small d-none"></div>
             <div id="bridgeButtons" class="d-grid gap-2">
                 <button id="googleBtn" class="btn btn-primary">Continuer avec Google</button>
-                <button id="msBtn" class="btn btn-outline-dark btn-sm">Continuer avec Microsoft</button>
-                <button id="appleBtn" class="btn btn-outline-secondary btn-sm">Continuer avec Apple</button>
             </div>
         </div>
     </div>
@@ -77,8 +75,6 @@
         }
 
         document.getElementById('googleBtn').addEventListener('click', () => triggerOAuth(new firebase.auth.GoogleAuthProvider()));
-        document.getElementById('msBtn').addEventListener('click', () => triggerOAuth(new firebase.auth.OAuthProvider('microsoft.com')));
-        document.getElementById('appleBtn').addEventListener('click', () => triggerOAuth(new firebase.auth.OAuthProvider('apple.com')));
 
         auth.onAuthStateChanged(user => {
             if (user) completeBridge(user);

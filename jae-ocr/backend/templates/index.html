@@ -10,8 +10,26 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 
-<body data-initial-match-id="{{ match_id or '' }}">
-    {% if not debug %}
+<body data-initial-match-id="{{ match_id or '' }}" data-demo-mode="{{ 'true' if demo else 'false' }}">
+    {% if demo %}
+    <div id="demoBar" class="bg-dark text-white px-3 py-2 shadow-sm">
+        <div class="container-fluid d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-warning text-dark">DÉMO INTERACTIVE</span>
+                <span class="small">Testez tout le parcours JAE sans compte (100 % local, aucune écriture serveur).</span>
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <button id="demoImportTenupBtn" class="btn btn-sm btn-primary">1. Simuler import Ten'Up</button>
+                <button id="demoScanMrzBtn" class="btn btn-sm btn-success">2. Simuler scan CNI (MRZ sans LLM)</button>
+                <button id="demoScanSubBtn" class="btn btn-sm btn-info text-dark">3. Simuler remplaçant / officiel</button>
+                <button id="demoRejectPermisBtn" class="btn btn-sm btn-outline-danger">4. Simuler rejet Permis</button>
+                <button id="demoResetBtn" class="btn btn-sm btn-outline-light">Réinitialiser</button>
+                <a href="/" class="btn btn-sm btn-warning text-dark fw-semibold">Connexion Google →</a>
+            </div>
+        </div>
+    </div>
+    <div id="demoToast" class="alert alert-info text-center py-2 mb-0 d-none" role="alert"></div>
+    {% elif not debug %}
     <div id="authBar" class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom bg-light flex-wrap gap-2">
         <div class="d-flex align-items-center gap-2">
             <span id="userBadge" class="small text-muted">Non connecté</span>
@@ -27,13 +45,12 @@
             <div class="text-center mb-3">
                 <img src="/static/img/logo.svg" alt="JAE Identités" width="56" height="56">
                 <h5 class="mt-2 mb-1">Connexion Juge-Arbitre</h5>
-                <p class="text-muted small mb-0">Connectez-vous via OAuth pour accéder à votre rencontre active.</p>
+                <p class="text-muted small mb-0">Connectez-vous avec Google pour accéder à votre rencontre active.</p>
             </div>
             <div id="authError" class="alert alert-danger py-2 small d-none"></div>
             <div class="d-grid gap-2">
                 <button id="googleSignInBtn" class="btn btn-primary">Continuer avec Google</button>
-                <button id="microsoftSignInBtn" class="btn btn-outline-dark btn-sm">Continuer avec Microsoft</button>
-                <button id="appleSignInBtn" class="btn btn-outline-secondary btn-sm">Continuer avec Apple</button>
+                <a href="/demo" class="btn btn-outline-secondary btn-sm mt-2">Essayer la démo interactive (sans connexion) →</a>
             </div>
         </div>
     </div>
@@ -72,6 +89,7 @@
             {% if not debug %}
             <button id="resetMatchBtn" class="btn btn-outline-danger ms-2">Nouvelle rencontre</button>
             {% endif %}
+            <a href="https://jae-scanner-2500276981.europe-west1.run.app" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary ms-2" title="Scanner web de secours (privilégiez l'application Android)">Scanner web (secours) ↗</a>
         </div>
 
         <div class="row">

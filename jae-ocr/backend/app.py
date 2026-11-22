@@ -1270,6 +1270,19 @@ def api_participants():
     return jsonify(list(participants.values()))
 
 
+@app.route("/demo", methods=["GET"])
+def serve_demo_page():
+    build_info = get_build_info()
+    return render_template(
+        "index.html",
+        participants=[],
+        debug=False,
+        demo=True,
+        match_id="DEMO-INTERACTIVE",
+        build_info=build_info,
+    )
+
+
 @app.route("/", methods=["GET"])
 @app.route("/m/<match_id>", methods=["GET"])
 def serve_page(match_id=None):
@@ -1279,6 +1292,7 @@ def serve_page(match_id=None):
         "index.html",
         participants=[],
         debug=debug_mode,
+        demo=False,
         match_id=match_id or "",
         build_info=build_info,
     )

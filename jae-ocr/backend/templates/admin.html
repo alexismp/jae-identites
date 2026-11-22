@@ -38,7 +38,6 @@
             <div id="loginError" class="alert alert-danger py-2 small d-none"></div>
             <div class="d-grid gap-2">
                 <button id="googleLoginBtn" class="btn btn-primary">Continuer avec Google</button>
-                <button id="msLoginBtn" class="btn btn-outline-dark btn-sm">Continuer avec Microsoft</button>
             </div>
         </div>
     </div>
@@ -316,7 +315,6 @@
         }
 
         document.getElementById('googleLoginBtn').addEventListener('click', () => adminOAuth(new firebase.auth.GoogleAuthProvider()));
-        document.getElementById('msLoginBtn').addEventListener('click', () => adminOAuth(new firebase.auth.OAuthProvider('microsoft.com')));
 
         document.getElementById('signOutBtn').addEventListener('click', () => auth.signOut());
 
