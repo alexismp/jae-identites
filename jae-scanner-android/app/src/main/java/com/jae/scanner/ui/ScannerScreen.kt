@@ -654,10 +654,10 @@ fun ScannerScreen(authRevision: Int = 0) {
         if (showLoginDialog) {
             AlertDialog(
                 onDismissRequest = { if (signedInEmail != null) showLoginDialog = false },
-                title = { Text("Connexion OAuth — Juge-Arbitre") },
+                title = { Text("Connexion Google — Juge-Arbitre") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Connectez-vous via OAuth (Google, Microsoft ou Apple) pour lier vos scans à votre rencontre active. Aucun mot de passe n'est utilisé.")
+                        Text("Connectez-vous avec votre compte Google pour lier vos scans à votre rencontre active.")
                         Button(
                             onClick = {
                                 val authUrl = "${BuildConfig.OCR_BACKEND_URL.trimEnd('/')}/mobile-auth"
@@ -665,7 +665,7 @@ fun ScannerScreen(authRevision: Int = 0) {
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Se connecter via OAuth")
+                            Text("Continuer avec Google")
                         }
                     }
                 },
