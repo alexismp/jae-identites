@@ -1098,6 +1098,16 @@ def api_admin_preapprove():
     return jsonify(res), 200
 
 
+@app.route("/api/admin/preapprove/<path:email>", methods=["DELETE"])
+def api_admin_remove_preapprove(email):
+    user, err = _require_admin()
+    if err:
+        return err
+    removed = match_store.remove_preapproved_email(email)
+    match_store.log_activity("admin_remove_preapprove", user=user, details={"email": email, "removed": removed})
+    return jsonify({"status": "removed", "email": email, "removed": removed}), 200
+
+
 @app.route("/api/admin/cleanup-archived", methods=["POST"])
 def api_admin_cleanup_archived():
     user, err = _require_admin()

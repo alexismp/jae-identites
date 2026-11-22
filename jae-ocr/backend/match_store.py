@@ -406,9 +406,12 @@ def log_activity(event_type, user=None, match_id=None, details=None, severity="i
 
 def list_all_users(limit=100):
     items = []
+    seen_emails = set()
     for doc in db.collection("users").stream():
         d = doc.to_dict() or {}
         email = normalize_email(d.get("email"))
+        if email:
+            seen_emails.add(email)
         role = "admin" if (is_default_admin_email(email) or d.get("role") == "admin") else "user"
         approved = True if (is_default_admin_email(email) or role == "admin" or d.get("approved") is True) else False
         items.append({
@@ -417,12 +420,30 @@ def list_all_users(limit=100):
             "displayName": d.get("displayName") or "",
             "role": role,
             "approved": approved,
+            "preapproved": False,
             "isDefaultAdmin": is_default_admin_email(email),
             "activeMatchId": d.get("activeMatchId") or "",
             "createdAt": d.get("createdAt") or "",
             "updatedAt": d.get("updatedAt") or "",
         })
-    items.sort(key=lambda x: (not x["approved"], x.get("updatedAt") or ""), reverse=False)
+    for doc in db.collection("approved_emails").stream():
+        d = doc.to_dict() or {}
+        email = normalize_email(d.get("email"))
+        if not email or email in seen_emails:
+            continue
+        items.append({
+            "uid": "",
+            "email": email,
+            "displayName": "",
+            "role": "admin" if d.get("role") == "admin" else "user",
+            "approved": True,
+            "preapproved": True,
+            "isDefaultAdmin": False,
+            "activeMatchId": "",
+            "createdAt": d.get("updatedAt") or "",
+            "updatedAt": d.get("updatedAt") or "",
+        })
+    items.sort(key=lambda x: (not x["approved"], x.get("preapproved", False), x.get("updatedAt") or ""), reverse=False)
     return items[:limit]
 
 
@@ -461,6 +482,18 @@ def preapprove_email(email, role="user"):
     for doc in db.collection("users").where("email", "==", norm).stream():
         doc.reference.update({"approved": True, "role": payload["role"], "updatedAt": payload["updatedAt"]})
     return payload
+
+
+def remove_preapproved_email(email):
+    norm = normalize_email(email)
+    if not norm:
+        return False
+    doc_id = sanitize_doc_id(norm)
+    ref = db.collection("approved_emails").document(doc_id)
+    if ref.get().exists:
+        ref.delete()
+        return True
+    return False
 
 
 def list_all_matches(limit=100):

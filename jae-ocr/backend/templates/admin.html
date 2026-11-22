@@ -215,12 +215,17 @@
                 <tr>
                     <td class="small">${u.email}</td>
                     <td class="text-nowrap">
-                        <span class="badge ${u.approved ? 'bg-success' : 'bg-warning text-dark'}">${u.approved ? 'Approuvé' : 'En attente'}</span>
+                        ${u.preapproved
+                            ? `<span class="badge bg-info text-dark">Pré-autorisé (jamais connecté)</span>`
+                            : `<span class="badge ${u.approved ? 'bg-success' : 'bg-warning text-dark'}">${u.approved ? 'Approuvé' : 'En attente'}</span>`
+                        }
                         <span class="badge ${u.role === 'admin' ? 'bg-dark' : 'bg-secondary'}">${u.role === 'admin' ? 'Admin' : 'JAE'}</span>
                     </td>
                     <td class="mono">${u.activeMatchId ? `<a href="/m/${u.activeMatchId}">${u.activeMatchId}</a>` : '—'}</td>
                     <td class="text-end text-nowrap">
-                        ${u.isDefaultAdmin ? '<span class="text-muted small">Admin principal</span>' : `
+                        ${u.isDefaultAdmin ? '<span class="text-muted small">Admin principal</span>' : u.preapproved ? `
+                            <button class="btn btn-sm btn-outline-danger py-0" onclick="removePreapprove('${u.email}')">Retirer</button>
+                        ` : `
                             ${u.approved
                                 ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="updateUser('${u.uid}', false, '${u.role}')">Bloquer</button>`
                                 : `<button class="btn btn-sm btn-success py-0" onclick="updateUser('${u.uid}', true, 'user')">Approuver</button>`
@@ -261,6 +266,12 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ approved, role })
             });
+            loadOverview();
+        };
+
+        window.removePreapprove = async function(email) {
+            if (!confirm('Retirer la pré-autorisation de ' + email + ' ?')) return;
+            await apiFetch('/api/admin/preapprove/' + encodeURIComponent(email), { method: 'DELETE' });
             loadOverview();
         };
 
