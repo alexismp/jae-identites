@@ -22,6 +22,14 @@ if not firebase_admin._apps:
 db = firestore.client()
 
 MATCH_PREFIX_RE = re.compile(r"^m_([a-zA-Z0-9_-]+)/(.+)$")
+TENUP_MATCH_ID_RE = re.compile(r"/rencontre/([a-zA-Z0-9_-]+)", re.IGNORECASE)
+
+
+def extract_tenup_match_id(tenup_url):
+    if not tenup_url:
+        return None
+    m = TENUP_MATCH_ID_RE.search(str(tenup_url))
+    return sanitize_doc_id(m.group(1)) if m else None
 
 
 def normalize_email(email):
@@ -188,40 +196,57 @@ def get_or_create_active_match(user):
     return create_new_active_match(user)
 
 
-def create_new_active_match(user):
-    """Archive l'éventuelle rencontre active de l'utilisateur et en crée une nouvelle unique."""
+def create_new_active_match(user, preferred_match_id=None):
+    """Archive l'éventuelle rencontre active de l'utilisateur et active/crée une rencontre unique (réutilise l'ID Ten'Up si fourni)."""
     uid = user["uid"]
     now = utc_now_iso()
     user_ref = db.collection("users").document(uid)
     user_snap = user_ref.get()
 
-    # 1. Archiver l'ancienne rencontre active (garantit 1 seule rencontre active par JAE)
+    target_id = sanitize_doc_id(preferred_match_id) if preferred_match_id else generate_match_id()
+
+    # Vérifier si la rencontre cible existe déjà dans Firestore
+    target_ref = db.collection("matches").document(target_id)
+    target_snap = target_ref.get()
+    if target_snap.exists:
+        existing = target_snap.to_dict() or {}
+        if existing.get("ownerUid") and existing.get("ownerUid") != uid and not user.get("isAdmin"):
+            # Éviter toute collision si un autre JAE non-admin possède déjà cet ID
+            target_id = f"{target_id}-{uid[:6]}"
+            target_ref = db.collection("matches").document(target_id)
+            target_snap = target_ref.get()
+
+    # 1. Archiver toute autre rencontre active de cet utilisateur (garantit 1 seule rencontre active par JAE)
     if user_snap.exists:
         old_id = (user_snap.to_dict() or {}).get("activeMatchId")
-        if old_id:
+        if old_id and old_id != target_id:
             old_ref = db.collection("matches").document(old_id)
             if old_ref.get().exists:
                 old_ref.update({"status": "archived", "archivedAt": now, "updatedAt": now})
 
-    # Par sécurité, archiver toute autre rencontre active résiduelle de cet utilisateur
     for doc in db.collection("matches").where("ownerUid", "==", uid).where("status", "==", "active").stream():
-        doc.reference.update({"status": "archived", "archivedAt": now, "updatedAt": now})
+        if doc.id != target_id:
+            doc.reference.update({"status": "archived", "archivedAt": now, "updatedAt": now})
 
-    # 2. Créer la nouvelle rencontre active
-    new_id = generate_match_id()
-    match_data = _new_match_doc(new_id, user)
-    db.collection("matches").document(new_id).set(match_data)
+    # 2. Réactiver la rencontre existante (si même ID Ten'Up) ou en créer une nouvelle
+    if target_snap.exists:
+        target_ref.update({"status": "active", "updatedAt": now})
+        match_data = {**(target_snap.to_dict() or {}), "matchId": target_id, "status": "active", "updatedAt": now}
+    else:
+        match_data = _new_match_doc(target_id, user)
+        target_ref.set(match_data)
+
     user_ref.set(
         {
             "uid": uid,
             "email": user.get("email") or "",
             "displayName": user.get("name") or "",
-            "activeMatchId": new_id,
+            "activeMatchId": target_id,
             "updatedAt": now,
         },
         merge=True,
     )
-    logging.info(f"Nouvelle rencontre active créée pour {user.get('email')}: {new_id}")
+    logging.info(f"Rencontre active définie pour {user.get('email')}: {target_id}")
     return match_data
 
 
@@ -401,8 +426,12 @@ def preapprove_email(email, role="user"):
 
 def list_all_matches(limit=100):
     items = []
-    for doc in db.collection("matches").stream():
+    for doc in db.collection("matches").where("ownerUid", ">", "").stream():
         d = doc.to_dict() or {}
+        owner_uid = (d.get("ownerUid") or "").strip()
+        owner_email = (d.get("ownerEmail") or "").strip()
+        if not owner_uid and not owner_email:
+            continue
         mid = d.get("matchId") or doc.id
         lic_count = sum(1 for _ in doc.reference.collection("licences").stream())
         pid_count = sum(1 for _ in doc.reference.collection("identities").stream())

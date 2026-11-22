@@ -189,8 +189,13 @@ async function postRosterSafe(fetchFn, ocrUrl, payload) {
   return parsed;
 }
 
+function extractTenupMatchId(url) {
+  const match = String(url || "").match(/\/rencontre\/([a-zA-Z0-9_-]+)/i);
+  return match ? match[1] : null;
+}
+
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { normalizeText, splitFullName, parseTeamText, postRosterSafe };
+  module.exports = { normalizeText, splitFullName, parseTeamText, postRosterSafe, extractTenupMatchId };
 } else {
-  self.JaeTenupParser = { normalizeText, splitFullName, parseTeamText, postRosterSafe };
+  self.JaeTenupParser = { normalizeText, splitFullName, parseTeamText, postRosterSafe, extractTenupMatchId };
 }

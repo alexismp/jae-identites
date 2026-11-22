@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { parseTeamText, postRosterSafe } = require("./parser.js");
+const { parseTeamText, postRosterSafe, extractTenupMatchId } = require("./parser.js");
 
 test("parseTeamText extrait les joueurs sous L'équipe (format multi-lignes Ten'Up)", () => {
   const sample = `
@@ -109,4 +109,16 @@ test("postRosterSafe réussit sur une réponse JSON 200 OK", async () => {
   const data = await postRosterSafe(fakeFetchOk, "https://example.run.app/", { team1Name: "RUEIL" });
   assert.equal(data.team1Name, "RUEIL");
   assert.equal(data.team1Players.length, 1);
+});
+
+test("extractTenupMatchId extrait l'identifiant de rencontre depuis une URL Ten'Up", () => {
+  assert.equal(
+    extractTenupMatchId("https://tenup.fft.fr/championnat/82661719/division/143390/phase/232494/rencontre/9963029"),
+    "9963029"
+  );
+  assert.equal(
+    extractTenupMatchId("https://tenup.fft.fr/championnat/1/rencontre/42819/?tab=equipes"),
+    "42819"
+  );
+  assert.equal(extractTenupMatchId("https://tenup.fft.fr/accueil"), null);
 });

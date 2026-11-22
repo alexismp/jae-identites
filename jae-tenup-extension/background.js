@@ -257,8 +257,9 @@ async function runExtraction(ocrUrl, newMatch = false) {
       return;
     }
 
+    const tenupMatchId = self.JaeTenupParser.extractTenupMatchId(activeTab.url);
     const teamLinks = await findTeamLinksOnMatchPage(activeTab.id);
-    console.log("[JAE Ten'Up] Liens équipes trouvés :", teamLinks);
+    console.log("[JAE Ten'Up] Liens équipes trouvés :", teamLinks, "tenupMatchId:", tenupMatchId);
 
     if (teamLinks.length === 0) {
       const direct = await readTeamDomInTab(activeTab.id);
@@ -266,6 +267,7 @@ async function runExtraction(ocrUrl, newMatch = false) {
         await setStatus(`Section L'équipe lue (${direct.players.length} joueurs). Envoi...`, "", true);
         const saved = await self.JaeTenupParser.postRosterSafe(authFetch, ocrUrl, {
           newMatch,
+          tenupMatchId,
           tenupUrl: activeTab.url,
           team1Name: direct.teamName,
           team1Players: direct.players,
@@ -292,6 +294,7 @@ async function runExtraction(ocrUrl, newMatch = false) {
 
     const payload = {
       newMatch,
+      tenupMatchId,
       tenupUrl: activeTab.url,
       team1Name: t1.teamName || teamLinks[0]?.label || "Équipe 1",
       team1Players: t1.players || [],

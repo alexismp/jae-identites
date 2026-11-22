@@ -1174,12 +1174,17 @@ def tenup_roster():
         }
         try:
             if user:
-                create_new = bool(payload.get("newMatch"))
-                active_match = (
-                    match_store.create_new_active_match(user)
-                    if create_new
-                    else match_store.get_or_create_active_match(user)
+                tenup_match_id = (
+                    (payload.get("tenupMatchId") or "").strip()
+                    or match_store.extract_tenup_match_id(roster["tenupUrl"])
                 )
+                create_new = bool(payload.get("newMatch"))
+                if tenup_match_id:
+                    active_match = match_store.create_new_active_match(user, preferred_match_id=tenup_match_id)
+                elif create_new:
+                    active_match = match_store.create_new_active_match(user)
+                else:
+                    active_match = match_store.get_or_create_active_match(user)
                 match_id = active_match["matchId"]
                 match_store.save_match_roster(match_id, roster)
                 match_store.log_activity(
