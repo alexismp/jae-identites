@@ -1,0 +1,16 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Full-bleed deep navy background for adaptive circular mask -->
+    <path
+        android:fillColor="#0F2B46"
+        android:pathData="M0,0 L108,0 L108,108 L0,108 Z"/>
+    <!-- Subtle clay-court ring right inside the circular mask edge (radius ~33dp) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#D95D24"
+        android:strokeWidth="3.5"
+        android:pathData="M54,21 A33,33 0 1,1 53.99,21 Z"/>
+</vector>

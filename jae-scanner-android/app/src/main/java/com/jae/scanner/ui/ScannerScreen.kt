@@ -13,6 +13,7 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -24,10 +25,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.FlashAuto
@@ -60,12 +64,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.jae.scanner.R
 import com.jae.scanner.network.ScanUploader
+import com.jae.scanner.quality.DetectedDocumentKind
 import com.jae.scanner.quality.GeminiNanoPostCaptureValidator
 import com.jae.scanner.quality.ImageQualityAnalyzer
 import com.jae.scanner.quality.QualityReport
@@ -90,6 +97,14 @@ private data class FailedScanNotice(
     val reason: String
 )
 
+private data class ScanHistoryEntry(
+    val time: String,
+    val title: String,
+    val detail: String,
+    val isSuccess: Boolean = true,
+    val isError: Boolean = false
+)
+
 @Composable
 fun ScannerScreen() {
     val context = LocalContext.current
@@ -112,7 +127,9 @@ fun ScannerScreen() {
     var pendingCount by remember { mutableIntStateOf(0) }
     var successCount by remember { mutableIntStateOf(0) }
     val failedScans = remember { mutableStateListOf<FailedScanNotice>() }
+    val actionHistory = remember { mutableStateListOf<ScanHistoryEntry>() }
     var showErrorsDialog by remember { mutableStateOf(false) }
+    var showHistoryDialog by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -151,6 +168,27 @@ fun ScannerScreen() {
 
     fun nowTime(): String = SimpleDateFormat("HH:mm:ss", Locale.FRANCE).format(Date())
 
+    fun logAction(
+        title: String,
+        detail: String,
+        isSuccess: Boolean = true,
+        isError: Boolean = false
+    ) {
+        actionHistory.add(
+            0,
+            ScanHistoryEntry(
+                time = nowTime(),
+                title = title,
+                detail = detail,
+                isSuccess = isSuccess,
+                isError = isError
+            )
+        )
+        if (actionHistory.size > 50) {
+            actionHistory.removeAt(actionHistory.lastIndex)
+        }
+    }
+
     fun captureAndQueueAsync() {
         val capture = imageCapture ?: return
         if (isCapturing) return
@@ -166,6 +204,7 @@ fun ScannerScreen() {
 
                     if (bitmap == null) {
                         toastMessage = "Erreur de décodage de l'image."
+                        logAction("Erreur capture", "Impossible de décoder l'image", isSuccess = false, isError = true)
                         isCapturing = false
                         return
                     }
@@ -188,22 +227,59 @@ fun ScannerScreen() {
                                         reason = validation.message
                                     )
                                 )
+                                logAction("Rejeté en local", validation.message, isSuccess = false, isError = true)
                             }
                             return@launch
+                        }
+
+                        // Circuit court sans LLM : pièce d'identité avec MRZ valide (checksums ICAO 9303 OK)
+                        val mrz = validation.mrzData
+                        if (validation.detectedKind == DetectedDocumentKind.IDENTITY &&
+                            mrz != null &&
+                            mrz.checkDigitsValid &&
+                            mrz.surname.isNotBlank() &&
+                            mrz.givenNames.isNotBlank()
+                        ) {
+                            withContext(Dispatchers.Main) {
+                                toastMessage = "MRZ valide : ${mrz.givenNames} ${mrz.surname} (validation directe...)"
+                            }
+                            val directResult = uploader.submitDirectIdentity(mrz)
+                            if (directResult.isSuccess) {
+                                val res = directResult.getOrThrow()
+                                withContext(Dispatchers.Main) {
+                                    pendingCount = (pendingCount - 1).coerceAtLeast(0)
+                                    successCount++
+                                    toastMessage = "✓ ${res.summary}"
+                                    logAction("Identité MRZ (sans LLM)", res.summary, isSuccess = true)
+                                }
+                                return@launch
+                            }
+                            withContext(Dispatchers.Main) {
+                                logAction(
+                                    "Fallback photo",
+                                    "Envoi direct MRZ indisponible (${directResult.exceptionOrNull()?.message ?: "erreur"}), bascule vers envoi image",
+                                    isSuccess = false
+                                )
+                            }
                         }
 
                         withContext(Dispatchers.Main) {
                             toastMessage = "${validation.message} (envoi en arrière-plan)"
                         }
 
-                        val jpegBytes = bitmapToJpeg(bitmap, quality = 95)
+                        val jpegBytes = bitmapToJpeg(bitmap, maxDimension = 1600, quality = 82)
+                        val sizeKb = (jpegBytes.size / 1024).coerceAtLeast(1)
                         val uploadResult = uploader.upload(jpegBytes)
                         uploadResult
                             .onSuccess { res ->
+                                withContext(Dispatchers.Main) {
+                                    val channel = if (res.viaSignedUrl) "Signed URL" else "/scan"
+                                    logAction("Photo envoyée ($sizeKb Ko)", "${validation.message} via $channel", isSuccess = true)
+                                }
                                 val ocrStatus = uploader.pollScanStatus(res.uploadedFile)
                                 withContext(Dispatchers.Main) {
                                     pendingCount = (pendingCount - 1).coerceAtLeast(0)
-                                    if (ocrStatus.isError) {
+                                    if (ocrStatus.isError || ocrStatus.isTimeout) {
                                         failedScans.add(
                                             0,
                                             FailedScanNotice(
@@ -212,22 +288,31 @@ fun ScannerScreen() {
                                                 reason = ocrStatus.summary
                                             )
                                         )
+                                        logAction(
+                                            if (ocrStatus.isTimeout) "Délai OCR dépassé" else "Erreur OCR",
+                                            ocrStatus.summary,
+                                            isSuccess = false,
+                                            isError = true
+                                        )
                                     } else {
                                         successCount++
+                                        logAction("OCR terminé", ocrStatus.summary, isSuccess = true)
                                     }
                                 }
                             }
                             .onFailure { err ->
                                 withContext(Dispatchers.Main) {
                                     pendingCount = (pendingCount - 1).coerceAtLeast(0)
+                                    val msg = "Échec upload ($sizeKb Ko) : ${err.message}"
                                     failedScans.add(
                                         0,
                                         FailedScanNotice(
                                             time = nowTime(),
                                             localLabel = validation.message,
-                                            reason = "Échec upload : ${err.message}"
+                                            reason = msg
                                         )
                                     )
+                                    logAction("Échec upload", msg, isSuccess = false, isError = true)
                                 }
                             }
                     }
@@ -235,6 +320,7 @@ fun ScannerScreen() {
 
                 override fun onError(exception: ImageCaptureException) {
                     toastMessage = "Erreur capture : ${exception.message}"
+                    logAction("Erreur caméra", exception.message ?: "Erreur inconnue", isSuccess = false, isError = true)
                     isCapturing = false
                 }
             }
@@ -315,6 +401,15 @@ fun ScannerScreen() {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Image(
+                    painter = painterResource(id = R.drawable.ic_launcher_jae),
+                    contentDescription = "Historique JAE Identités",
+                    modifier = Modifier
+                        .size(40.dp)
+                        .padding(end = 8.dp)
+                        .clickable { showHistoryDialog = true }
+                )
+
                 Surface(
                     color = if (qualityReport.isAcceptable) Color(0xCC1B5E20) else Color(0xCCB71C1C),
                     shape = RoundedCornerShape(12.dp),
@@ -463,6 +558,58 @@ fun ScannerScreen() {
                 }
             )
         }
+
+        if (showHistoryDialog) {
+            AlertDialog(
+                onDismissRequest = { showHistoryDialog = false },
+                title = { Text("Historique des actions (${actionHistory.size})") },
+                text = {
+                    if (actionHistory.isEmpty()) {
+                        Text("Aucune action enregistrée pour le moment.")
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .heightIn(max = 360.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            actionHistory.forEach { entry ->
+                                val prefix = when {
+                                    entry.isError -> "✕"
+                                    entry.isSuccess -> "✓"
+                                    else -> "•"
+                                }
+                                val titleColor = when {
+                                    entry.isError -> Color(0xFFC62828)
+                                    entry.isSuccess -> Color(0xFF1B5E20)
+                                    else -> Color(0xFF374151)
+                                }
+                                Column {
+                                    Text(
+                                        text = "$prefix [${entry.time}] ${entry.title}",
+                                        fontWeight = FontWeight.Bold,
+                                        color = titleColor
+                                    )
+                                    Text(text = entry.detail)
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showHistoryDialog = false }) {
+                        Text("Fermer")
+                    }
+                },
+                dismissButton = {
+                    if (actionHistory.isNotEmpty()) {
+                        TextButton(onClick = { actionHistory.clear() }) {
+                            Text("Effacer")
+                        }
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -496,8 +643,20 @@ private fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
     return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
 }
 
-private fun bitmapToJpeg(bitmap: Bitmap, quality: Int): ByteArray {
+private fun bitmapToJpeg(bitmap: Bitmap, maxDimension: Int = 1600, quality: Int = 82): ByteArray {
+    val maxSide = maxOf(bitmap.width, bitmap.height)
+    val scaled = if (maxSide > maxDimension) {
+        val ratio = maxDimension.toFloat() / maxSide.toFloat()
+        val targetW = (bitmap.width * ratio).toInt().coerceAtLeast(1)
+        val targetH = (bitmap.height * ratio).toInt().coerceAtLeast(1)
+        Bitmap.createScaledBitmap(bitmap, targetW, targetH, true)
+    } else {
+        bitmap
+    }
     val stream = ByteArrayOutputStream()
-    bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)
+    scaled.compress(Bitmap.CompressFormat.JPEG, quality, stream)
+    if (scaled !== bitmap) {
+        scaled.recycle()
+    }
     return stream.toByteArray()
 }

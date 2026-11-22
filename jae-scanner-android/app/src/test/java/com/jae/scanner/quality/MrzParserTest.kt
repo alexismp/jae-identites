@@ -1,6 +1,7 @@
 package com.jae.scanner.quality
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -82,5 +83,14 @@ class MrzParserTest {
         val autoId = MlKitTextPostCaptureValidator.classifyText("RÉPUBLIQUE FRANÇAISE\nCARTE NATIONALE D'IDENTITÉ\nMARTIN Léa")
         assertTrue(autoId.isValid)
         assertEquals(DetectedDocumentKind.IDENTITY, autoId.detectedKind)
+    }
+
+    @Test
+    fun rejectsDrivingLicenceAndResidencePermit() {
+        val drivingLicence = MlKitTextPostCaptureValidator.classifyText("RÉPUBLIQUE FRANÇAISE\nPERMIS DE CONDUIRE\n1. MARTIN\n2. Léa")
+        assertFalse(drivingLicence.isValid)
+
+        val residencePermit = MlKitTextPostCaptureValidator.classifyText("RÉPUBLIQUE FRANÇAISE\nTITRE DE SÉJOUR\nCARTE DE RÉSIDENT\nMARTIN Léa")
+        assertFalse(residencePermit.isValid)
     }
 }

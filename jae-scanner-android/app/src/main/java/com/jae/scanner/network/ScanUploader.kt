@@ -1,6 +1,7 @@
 package com.jae.scanner.network
 
 import com.jae.scanner.BuildConfig
+import com.jae.scanner.quality.MrzData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -19,10 +20,17 @@ data class UploadResult(
     val viaSignedUrl: Boolean
 )
 
+data class DirectIdentityResult(
+    val resultFile: String,
+    val matched: Boolean,
+    val summary: String
+)
+
 data class ScanStatusResult(
     val status: String, // pending, processing, done, error, timeout
     val summary: String,
-    val isError: Boolean = false
+    val isError: Boolean = false,
+    val isTimeout: Boolean = false
 )
 
 /**
@@ -36,8 +44,8 @@ class ScanUploader(
 ) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
         .build()
 
     suspend fun upload(jpegBytes: ByteArray): Result<UploadResult> = withContext(Dispatchers.IO) {
@@ -48,10 +56,59 @@ class ScanUploader(
         uploadViaScannerEndpoint(jpegBytes)
     }
 
+    /**
+     * Envoie directement le nom/prénom extraits par MRZ (checksums ICAO 9303 valides)
+     * au backend jae-ocr sans téléverser l'image ni solliciter le LLM.
+     */
+    suspend fun submitDirectIdentity(mrz: MrzData): Result<DirectIdentityResult> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (ocrBaseUrl.isBlank()) {
+                throw IOException("OCR_BACKEND_URL non configurée")
+            }
+            val payload = JSONObject()
+                .put("nom", mrz.surname)
+                .put("prenom", mrz.givenNames)
+                .put("document_subtype", "mrz_${mrz.format.name.lowercase()}")
+                .put("issuing_country", mrz.issuingCountry)
+                .put("check_digits_valid", mrz.checkDigitsValid)
+                .put("source", "android_mrz")
+                .toString()
+
+            val reqBuilder = Request.Builder()
+                .url("$ocrBaseUrl/api/identite/direct")
+                .post(payload.toRequestBody("application/json".toMediaType()))
+
+            if (apiKey.isNotBlank()) {
+                reqBuilder.header("X-API-Key", apiKey)
+            }
+
+            client.newCall(reqBuilder.build()).execute().use { resp ->
+                val rawBody = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    throw IOException("Erreur identité directe (${resp.code})")
+                }
+                val body = JSONObject(rawBody)
+                val resultFile = body.optString("result_file")
+                val matched = body.optBoolean("matched", false)
+                val label = "${mrz.givenNames} ${mrz.surname}".trim()
+                val summary = if (matched) {
+                    "Validé sans LLM : $label"
+                } else {
+                    "Enregistré sans LLM : $label (en attente de licence/Ten'Up)"
+                }
+                DirectIdentityResult(
+                    resultFile = resultFile,
+                    matched = matched,
+                    summary = summary
+                )
+            }
+        }
+    }
+
     suspend fun pollScanStatus(
         objectName: String,
-        maxAttempts: Int = 14,
-        intervalMs: Long = 1500L
+        maxAttempts: Int = 40,
+        intervalMs: Long = 2000L
     ): ScanStatusResult = withContext(Dispatchers.IO) {
         if (ocrBaseUrl.isBlank()) {
             return@withContext ScanStatusResult(
@@ -104,7 +161,8 @@ class ScanUploader(
 
         ScanStatusResult(
             status = "timeout",
-            summary = "Envoyé — traitement OCR toujours en cours sur le serveur"
+            summary = "Délai dépassé (> 80s) — vérifiez le tableau ou rescannez si besoin",
+            isTimeout = true
         )
     }
 

@@ -41,6 +41,23 @@ class MlKitTextPostCaptureValidator(
     companion object {
         private val FFT_LICENCE_REGEX = Regex("\\b\\d{7}\\s?[A-Z]\\b")
         private val FFT_KEYWORDS = listOf("FFT", "LICENCE", "CLASSEMENT", "TENNIS", "TEN'UP", "TENUP", "CLUB")
+        private val FORBIDDEN_DOC_KEYWORDS = listOf(
+            "PERMIS DE CONDUIRE",
+            "DRIVING LICENCE",
+            "DRIVING LICENSE",
+            "FÜHRERSCHEIN",
+            "FUHRERSCHEIN",
+            "PATENTE DI GUIDA",
+            "PERMISO DE CONDUCCION",
+            "TITRE DE SEJOUR",
+            "TITRE DE SÉJOUR",
+            "CARTE DE SEJOUR",
+            "CARTE DE SÉJOUR",
+            "CARTE DE RESIDENT",
+            "CARTE DE RÉSIDENT",
+            "RESIDENCE PERMIT",
+            "AUFENTHALTSTITEL"
+        )
         private val ID_KEYWORDS = listOf(
             "CARTE NATIONALE",
             "REPUBLIQUE FRANCAISE",
@@ -70,12 +87,27 @@ class MlKitTextPostCaptureValidator(
             return ID_KEYWORDS.any { upper.contains(it) }
         }
 
+        internal fun hasForbiddenDocumentKeywords(rawText: String): Boolean {
+            val upper = rawText.uppercase()
+            return FORBIDDEN_DOC_KEYWORDS.any { upper.contains(it) }
+        }
+
         internal fun classifyText(rawText: String): PostCaptureResult {
             val charCount = rawText.replace("\\s+".toRegex(), "").length
             if (charCount < 12) {
                 return PostCaptureResult(
                     isValid = false,
                     message = "Texte insuffisant ou illisible ($charCount car.). Veuillez rescanner.",
+                    detectedTextChars = charCount
+                )
+            }
+
+            // 0. Rejet immédiat des pièces non autorisées (permis de conduire, titres/cartes de séjour)
+            if (hasForbiddenDocumentKeywords(rawText)) {
+                return PostCaptureResult(
+                    isValid = false,
+                    message = "Document non autorisé (permis de conduire ou titre de séjour). Seuls CNI et passeport sont acceptés.",
+                    detectedKind = DetectedDocumentKind.IDENTITY,
                     detectedTextChars = charCount
                 )
             }
