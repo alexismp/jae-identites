@@ -71,13 +71,16 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.jae.scanner.BuildConfig
 import com.jae.scanner.R
 import com.jae.scanner.auth.FirebaseAuthManager
+import com.jae.scanner.network.ActiveMatchInfo
 import com.jae.scanner.network.ScanUploader
 import com.jae.scanner.quality.DetectedDocumentKind
 import com.jae.scanner.quality.GeminiNanoPostCaptureValidator
@@ -125,11 +128,32 @@ fun ScannerScreen(authRevision: Int = 0) {
 
     var signedInEmail by remember { mutableStateOf(authManager.getCurrentEmail()) }
     var showLoginDialog by remember { mutableStateOf(!authManager.isSignedIn()) }
+    var activeMatch by remember { mutableStateOf<ActiveMatchInfo?>(null) }
+    var isRefreshingMatch by remember { mutableStateOf(false) }
+
+    fun refreshActiveMatch() {
+        if (!authManager.isSignedIn()) {
+            activeMatch = null
+            return
+        }
+        scope.launch {
+            isRefreshingMatch = true
+            uploader.fetchActiveMatch()
+                .onSuccess { activeMatch = it }
+                .onFailure { /* silencieux, l'utilisateur peut retaper pour réessayer */ }
+            isRefreshingMatch = false
+        }
+    }
 
     LaunchedEffect(authRevision) {
         val email = authManager.getCurrentEmail()
         signedInEmail = email
         showLoginDialog = !authManager.isSignedIn()
+        if (authManager.isSignedIn()) {
+            refreshActiveMatch()
+        } else {
+            activeMatch = null
+        }
     }
 
     var previewViewRef by remember { mutableStateOf<PreviewView?>(null) }
@@ -462,6 +486,30 @@ fun ScannerScreen(authRevision: Int = 0) {
                         imageVector = icon,
                         contentDescription = lightingMode.label,
                         tint = if (lightingMode == LightingMode.TORCH) Color.Yellow else Color.White
+                    )
+                }
+            }
+
+            // Bandeau discret indiquant la rencontre active (cliquable pour actualiser)
+            if (signedInEmail != null) {
+                Surface(
+                    color = Color(0xCC0F2B46),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.clickable { refreshActiveMatch() }
+                ) {
+                    val label = when {
+                        isRefreshingMatch && activeMatch == null -> "Rencontre : chargement..."
+                        activeMatch != null -> "Rencontre ${activeMatch!!.displayLabel()}  ↻"
+                        else -> "Rencontre active indisponible (appuyer pour actualiser) ↻"
+                    }
+                    Text(
+                        text = label,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
                     )
                 }
             }

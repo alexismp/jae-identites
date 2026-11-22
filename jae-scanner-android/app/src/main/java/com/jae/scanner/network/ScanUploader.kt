@@ -33,6 +33,19 @@ data class ScanStatusResult(
     val isTimeout: Boolean = false
 )
 
+data class ActiveMatchInfo(
+    val matchId: String,
+    val team1Name: String,
+    val team2Name: String
+) {
+    fun displayLabel(): String {
+        val teams = listOf(team1Name, team2Name)
+            .filter { it.isNotBlank() }
+            .joinToString(" vs ")
+        return if (teams.isNotBlank()) "#$matchId · $teams" else "Rencontre #$matchId"
+    }
+}
+
 /**
  * Téléverse l'image JPEG capturée (priorité Signed URL GCS sur jae-ocr, fallback POST /scan)
  * et suit le résultat ou les erreurs asynchrones du backend jae-ocr via GET /api/scan-status/<file>.
@@ -48,6 +61,35 @@ class ScanUploader(
         .writeTimeout(60, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
+
+    suspend fun fetchActiveMatch(): Result<ActiveMatchInfo> = withContext(Dispatchers.IO) {
+        val bearerToken = tokenProvider?.invoke()
+        runCatching {
+            if (ocrBaseUrl.isBlank()) throw IOException("OCR_BACKEND_URL non configurée")
+            if (bearerToken.isNullOrBlank()) throw IOException("Non connecté")
+
+            val req = Request.Builder()
+                .url("$ocrBaseUrl/api/me")
+                .header("Authorization", "Bearer $bearerToken")
+                .get()
+                .build()
+
+            client.newCall(req).execute().use { resp ->
+                val rawBody = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
+                val body = JSONObject(rawBody)
+                val match = body.optJSONObject("activeMatch")
+                    ?: throw IOException("Aucune rencontre active")
+                val matchId = match.optString("matchId", "").trim()
+                if (matchId.isBlank()) throw IOException("Identifiant de rencontre manquant")
+                ActiveMatchInfo(
+                    matchId = matchId,
+                    team1Name = match.optString("team1Name", "Équipe 1").trim(),
+                    team2Name = match.optString("team2Name", "Équipe 2").trim()
+                )
+            }
+        }
+    }
 
     suspend fun upload(jpegBytes: ByteArray): Result<UploadResult> = withContext(Dispatchers.IO) {
         val bearerToken = tokenProvider?.invoke()
