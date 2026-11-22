@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JAE Identités — Connexion OAuth</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/logo.svg">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <div class="container py-5" style="max-width: 420px;">
+        <div class="card shadow-sm p-4 text-center">
+            <img src="/static/img/logo.svg" alt="JAE Identités" width="56" height="56" class="mx-auto mb-2">
+            <h5 class="mb-2">Connexion OAuth — JAE Identités</h5>
+            <p id="bridgeSubtitle" class="text-muted small mb-3">
+                {% if target == 'mobile' %}
+                Connectez-vous pour revenir automatiquement dans l'application Android.
+                {% else %}
+                Connectez-vous pour activer votre extension Chrome JAE Ten'Up.
+                {% endif %}
+            </p>
+            <div id="bridgeError" class="alert alert-danger py-2 small d-none"></div>
+            <div id="bridgeSuccess" class="alert alert-success py-2 small d-none"></div>
+            <div id="bridgeButtons" class="d-grid gap-2">
+                <button id="googleBtn" class="btn btn-primary">Continuer avec Google</button>
+                <button id="msBtn" class="btn btn-outline-dark btn-sm">Continuer avec Microsoft</button>
+                <button id="appleBtn" class="btn btn-outline-secondary btn-sm">Continuer avec Apple</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="/static/js/firebase-config.js"></script>
+    <script>
+        const TARGET = "{{ target }}";
+        firebase.initializeApp(window.JAE_FIREBASE_CONFIG);
+        const auth = firebase.auth();
+
+        async function completeBridge(user) {
+            const idToken = await user.getIdToken();
+            const refreshToken = user.refreshToken || "";
+            const email = user.email || "";
+            if (TARGET === "mobile") {
+                const deepLink = `jaescanner://auth?email=${encodeURIComponent(email)}&id_token=${encodeURIComponent(idToken)}&refresh_token=${encodeURIComponent(refreshToken)}`;
+                document.getElementById('bridgeSuccess').textContent = `Connecté (${email}) — retour vers l'application Android...`;
+                document.getElementById('bridgeSuccess').classList.remove('d-none');
+                window.location.href = deepLink;
+            } else {
+                // Exposer les jetons dans un élément dédié lu par l'extension Chrome
+                let holder = document.getElementById('jaeExtAuthPayload');
+                if (!holder) {
+                    holder = document.createElement('script');
+                    holder.id = 'jaeExtAuthPayload';
+                    holder.type = 'application/json';
+                    document.body.appendChild(holder);
+                }
+                holder.textContent = JSON.stringify({ email, idToken, refreshToken });
+                document.getElementById('bridgeSuccess').textContent = `Connecté (${email}) ! Vous pouvez fermer cet onglet.`;
+                document.getElementById('bridgeSuccess').classList.remove('d-none');
+            }
+        }
+
+        async function triggerOAuth(provider) {
+            document.getElementById('bridgeError').classList.add('d-none');
+            try {
+                const res = await auth.signInWithPopup(provider);
+                if (res && res.user) await completeBridge(res.user);
+            } catch (e) {
+                if (e && e.code === 'auth/popup-blocked') {
+                    await auth.signInWithRedirect(provider);
+                } else {
+                    document.getElementById('bridgeError').textContent = e.message;
+                    document.getElementById('bridgeError').classList.remove('d-none');
+                }
+            }
+        }
+
+        document.getElementById('googleBtn').addEventListener('click', () => triggerOAuth(new firebase.auth.GoogleAuthProvider()));
+        document.getElementById('msBtn').addEventListener('click', () => triggerOAuth(new firebase.auth.OAuthProvider('microsoft.com')));
+        document.getElementById('appleBtn').addEventListener('click', () => triggerOAuth(new firebase.auth.OAuthProvider('apple.com')));
+
+        auth.onAuthStateChanged(user => {
+            if (user) completeBridge(user);
+        });
+    </script>
+</body>
+</html>

@@ -18,6 +18,8 @@ from google.cloud import storage
 from google.genai import types
 from PIL import Image
 
+import match_store
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
@@ -188,33 +190,49 @@ def get_match_reset_at(bucket):
 def handle_storage_event(bucket_name, file_name):
     logging.info(f"Fichier {file_name} uploadé dans le bucket {bucket_name}.")
 
-    lock_filename = f"{file_name}.LOCK"
+    match_id, bare_name = match_store.parse_match_id_from_object_name(file_name)
+    safe_lock_name = file_name.replace("/", "__")
+    lock_filename = f"{safe_lock_name}.LOCK"
     destination_bucket = storage_client.bucket(RESULTS_BUCKET_NAME)
     lock_blob = destination_bucket.blob(lock_filename)
     lock_acquired = False
 
+    def record_status(payload):
+        if match_id:
+            match_store.save_match_scan_status(match_id, file_name, payload)
+        else:
+            write_scan_status(destination_bucket, file_name, payload)
+
     try:
-        # Ignorer les retries Eventarc d'anciens scans antérieurs à la dernière « Nouvelle rencontre »
         source_bucket = storage_client.bucket(bucket_name)
         blob = source_bucket.blob(file_name)
         blob.reload()
-        reset_at = get_match_reset_at(destination_bucket)
-        if reset_at and blob.time_created and blob.time_created < reset_at:
-            logging.info(
-                f"Ignoré (retry ancien antérieur à Nouvelle rencontre {reset_at.isoformat()}) : {file_name}"
-            )
-            return
+
+        if not match_id:
+            # Ignorer les retries Eventarc d'anciens scans antérieurs à la dernière « Nouvelle rencontre » (mode legacy GCS)
+            reset_at = get_match_reset_at(destination_bucket)
+            if reset_at and blob.time_created and blob.time_created < reset_at:
+                logging.info(
+                    f"Ignoré (retry ancien antérieur à Nouvelle rencontre {reset_at.isoformat()}) : {file_name}"
+                )
+                return
 
         # Ignorer les retries Eventarc si le fichier a déjà été traité avec succès
-        status_blob = destination_bucket.blob(f"STATUS_{file_name}.json")
-        if status_blob.exists():
-            try:
-                existing_status = json.loads(status_blob.download_as_string())
-                if existing_status.get("status") == "done":
-                    logging.info(f"Fichier déjà traité avec succès (STATUS done) : {file_name}. Retry Eventarc ignoré.")
-                    return
-            except Exception:
-                pass
+        if match_id:
+            existing_fs_status = match_store.get_match_scan_status(match_id, file_name)
+            if existing_fs_status and existing_fs_status.get("status") == "done":
+                logging.info(f"Fichier déjà traité (Firestore done) : {file_name}. Retry Eventarc ignoré.")
+                return
+        else:
+            status_blob = destination_bucket.blob(f"STATUS_{file_name}.json")
+            if status_blob.exists():
+                try:
+                    existing_status = json.loads(status_blob.download_as_string())
+                    if existing_status.get("status") == "done":
+                        logging.info(f"Fichier déjà traité avec succès (STATUS done) : {file_name}. Retry Eventarc ignoré.")
+                        return
+                except Exception:
+                    pass
 
         # Acquisition atomique du verrou (évite les race conditions multi-threads / retries Eventarc)
         try:
@@ -225,7 +243,7 @@ def handle_storage_event(bucket_name, file_name):
             logging.info(f"Lock file {lock_filename} already exists. Skipping duplicate event.")
             return
 
-        write_scan_status(destination_bucket, file_name, {"status": "processing"})
+        record_status({"status": "processing"})
 
         # Télécharger l'image depuis le bucket source
         img_bytes = blob.download_as_bytes()
@@ -285,7 +303,8 @@ def handle_storage_event(bucket_name, file_name):
             if doc_type == "non_autorise" or doc_subtype in ("permis_conduire", "titre_sejour", "carte_sejour"):
                 msg = "Document non autorisé (permis de conduire ou titre de séjour). Seuls CNI et passeport sont acceptés."
                 logging.warning(f"Document refusé ({doc_subtype or doc_type}) pour {file_name}")
-                write_scan_status(destination_bucket, file_name, {"status": "error", "error": msg})
+                record_status({"status": "error", "error": msg})
+                match_store.log_activity("ocr_rejected", match_id=match_id, details={"file": file_name, "subtype": doc_subtype or doc_type}, severity="error")
                 return
 
             if doc_type == "licence":
@@ -298,18 +317,25 @@ def handle_storage_event(bucket_name, file_name):
             short_id = uuid.uuid4().hex[:8]
             result_filename = f"{prefix}_{first_name}_{last_name}_{short_id}.json"
 
-            result_blob = destination_bucket.blob(result_filename)
-            logging.info(f"Uploading JSON file {result_filename} to bucket {RESULTS_BUCKET_NAME}...")
-            result_blob.upload_from_string(
-                json.dumps(json_data, indent=4, ensure_ascii=False),
-                content_type="application/json",
-            )
-            logging.info(f"Résultat JSON sauvegardé sous {result_filename} dans {RESULTS_BUCKET_NAME}")
-            write_scan_status(
-                destination_bucket,
-                file_name,
+            if match_id:
+                if prefix == "LIC":
+                    match_store.save_match_licence(match_id, result_filename, json_data)
+                elif prefix == "PID":
+                    match_store.save_match_identity(match_id, result_filename, json_data)
+                logging.info(f"Résultat Firestore sauvegardé ({result_filename}) dans matches/{match_id}")
+            else:
+                result_blob = destination_bucket.blob(result_filename)
+                logging.info(f"Uploading JSON file {result_filename} to bucket {RESULTS_BUCKET_NAME}...")
+                result_blob.upload_from_string(
+                    json.dumps(json_data, indent=4, ensure_ascii=False),
+                    content_type="application/json",
+                )
+                logging.info(f"Résultat JSON sauvegardé sous {result_filename} dans {RESULTS_BUCKET_NAME}")
+
+            record_status(
                 {
                     "status": "done",
+                    "matchId": match_id,
                     "type": doc_type,
                     "document_subtype": json_data.get("document_subtype"),
                     "nom": json_data.get("nom"),
@@ -318,18 +344,29 @@ def handle_storage_event(bucket_name, file_name):
                     "result_file": result_filename,
                 },
             )
+            match_store.log_activity(
+                "ocr_completed",
+                match_id=match_id,
+                details={
+                    "type": doc_type,
+                    "subtype": json_data.get("document_subtype"),
+                    "nom": json_data.get("nom"),
+                    "prenom": json_data.get("prenom"),
+                },
+            )
 
         except json.JSONDecodeError:
             msg = "La réponse de Gemini n'est pas un JSON valide."
             logging.error(f"Erreur: {msg} Réponse reçue:\n{response.text}")
-            write_scan_status(destination_bucket, file_name, {"status": "error", "error": msg})
+            record_status({"status": "error", "error": msg})
         except Exception as e:
             logging.error(f"Erreur lors de la sauvegarde du résultat JSON : {e}")
-            write_scan_status(destination_bucket, file_name, {"status": "error", "error": str(e)})
+            record_status({"status": "error", "error": str(e)})
 
     except Exception as e:
         logging.error(f"Erreur lors du traitement de l'image {file_name} : {e}")
-        write_scan_status(destination_bucket, file_name, {"status": "error", "error": str(e)})
+        record_status({"status": "error", "error": str(e)})
+        match_store.log_activity("ocr_error", match_id=match_id, details={"file": file_name, "error": str(e)[:200]}, severity="error")
         err_str = str(e)
         if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "503" in err_str or "UNAVAILABLE" in err_str:
             raise
@@ -352,6 +389,102 @@ def gs_uri_to_https(image_uri):
         return f"https://storage.cloud.google.com/{image_bucket_name}/{image_file_name}"
     logging.error(f"Invalid image URI format: {image_uri}")
     return None
+
+
+def build_participants_from_records(roster_data, lic_records, pid_records):
+    """Assemble la liste des participants à partir d'un roster Ten'Up, de licences LIC_ et de PID_."""
+    participants = {}
+
+    for blob_name, data in lic_records:
+        license_no = data.get("licence")
+        participant_key = license_no or f"TEMP_{slugify_filename_part(data.get('nom'))}_{slugify_filename_part(data.get('prenom'))}"
+        participants[participant_key] = {
+            "nom": data.get("nom"),
+            "prenom": data.get("prenom"),
+            "licence": license_no or "INCOMPLET",
+            "licence_incomplete": not bool(license_no),
+            "document_subtype": data.get("document_subtype"),
+            "champs_manquants": data.get("champs_manquants") or [],
+            "annee_validite": data.get("annee_validite"),
+            "classement": data.get("classement"),
+            "club": data.get("club"),
+            "statut": data.get("statut"),
+            "id_checked": False,
+            "image_uri": gs_uri_to_https(data.get("image_uri")),
+        }
+
+    # 1. Pré-remplir les fiches du roster Ten'Up
+    if roster_data:
+        for team_key, name_key in (("team1Players", "team1Name"), ("team2Players", "team2Name")):
+            team_name = roster_data.get(name_key) or ""
+            for rp in roster_data.get(team_key) or []:
+                r_nom = rp.get("nom") or ""
+                r_prenom = rp.get("prenom") or ""
+                if not r_nom and not r_prenom:
+                    continue
+                existing_key = next(
+                    (
+                        k
+                        for k, p in participants.items()
+                        if names_match(p.get("nom"), p.get("prenom"), {"nom": r_nom, "prenom": r_prenom})
+                    ),
+                    None,
+                )
+                if existing_key:
+                    if not participants[existing_key].get("classement") and rp.get("classement"):
+                        participants[existing_key]["classement"] = rp.get("classement")
+                    if not participants[existing_key].get("club") and team_name:
+                        participants[existing_key]["club"] = team_name
+                    continue
+
+                roster_id = f"TENUP_{slugify_filename_part(r_nom)}_{slugify_filename_part(r_prenom)}"
+                expected_slot = "team1" if team_key == "team1Players" else "team2"
+                participants[roster_id] = {
+                    "nom": r_nom,
+                    "prenom": r_prenom,
+                    "licence": f"Ten'Up ({roster_id.replace('TENUP_', '')})",
+                    "licence_incomplete": False,
+                    "document_subtype": "tenup_roster",
+                    "expected_team_slot": expected_slot,
+                    "team_slot": None,
+                    "champs_manquants": [],
+                    "annee_validite": None,
+                    "classement": rp.get("classement") or None,
+                    "club": team_name or None,
+                    "statut": rp.get("statut") or None,
+                    "id_checked": False,
+                    "image_uri": None,
+                }
+
+    # 2. Cocher id_checked sur toute fiche existante (LIC_ ou joueur Ten'Up)
+    for blob_name, pid_data in pid_records:
+        for participant in participants.values():
+            if names_match(participant.get("nom"), participant.get("prenom"), pid_data):
+                participant["id_checked"] = True
+                break
+
+    # 3. Propager expected_team_slot sur les fiches LIC_ qui correspondent au roster Ten'Up
+    if roster_data:
+        for team_key, slot in (("team1Players", "team1"), ("team2Players", "team2")):
+            for rp in roster_data.get(team_key) or []:
+                for p in participants.values():
+                    if not p.get("expected_team_slot") and names_match(p.get("nom"), p.get("prenom"), rp):
+                        p["expected_team_slot"] = slot
+
+    for p in participants.values():
+        if p.get("id_checked") and p.get("expected_team_slot"):
+            p["team_slot"] = p["expected_team_slot"]
+        else:
+            p["team_slot"] = None
+
+    return participants
+
+
+def get_match_participants_data(match_id):
+    match_doc, lic_records, pid_records = match_store.load_match_records(match_id)
+    if match_doc is None:
+        return {}
+    return build_participants_from_records(match_doc.get("roster") or {}, lic_records, pid_records)
 
 
 def get_participants_data():
@@ -480,20 +613,34 @@ def get_participants_data():
     return participants
 
 
-@app.route("/api/upload-url", methods=["POST"])
+@app.route("/api/upload-url", methods=["POST", "OPTIONS"])
 def create_upload_url():
-    """Génère une GCS Signed URL v4 courte pour upload direct (Android) sans passer par jae-scanner."""
-    if not is_authorized_request():
-        return jsonify({"error": "Unauthorized"}), 401
+    """Génère une GCS Signed URL v4 courte pour upload direct (Android / Web) lié à la rencontre active de l'utilisateur."""
+    if request.method == "OPTIONS":
+        return add_cors_headers(app.make_response(("", 204)))
+
+    user = match_store.verify_firebase_request(request)
+    if not user and not is_authorized_request():
+        return add_cors_headers(jsonify({"error": "Unauthorized"})), 401
+    if user and not user.get("approved"):
+        return add_cors_headers(jsonify({"error": "Compte en attente de validation par l'administrateur.", "code": "PENDING_APPROVAL"})), 403
 
     payload = request.get_json(silent=True) or {}
     content_type = payload.get("content_type", "image/jpeg")
     if content_type not in ("image/jpeg", "image/png", "image/webp"):
-        return jsonify({"error": "Unsupported content_type"}), 400
+        return add_cors_headers(jsonify({"error": "Unsupported content_type"})), 400
+
+    match_id = None
+    if user:
+        active_match = match_store.get_or_create_active_match(user)
+        match_id = active_match["matchId"]
+    elif payload.get("matchId"):
+        match_id = match_store.sanitize_doc_id(payload.get("matchId"))
 
     ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}[content_type]
     timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
-    object_name = f"{timestamp}-{uuid.uuid4().hex[:8]}-capture.{ext}"
+    base_name = f"{timestamp}-{uuid.uuid4().hex[:8]}-capture.{ext}"
+    object_name = f"m_{match_id}/{base_name}" if match_id else base_name
 
     try:
         bucket = storage_client.bucket(SCAN_BUCKET_NAME)
@@ -512,29 +659,36 @@ def create_upload_url():
             content_type=content_type,
             **sign_kwargs,
         )
-        return jsonify({
+        return add_cors_headers(jsonify({
             "upload_url": signed_url,
             "object_name": object_name,
+            "matchId": match_id,
             "bucket": SCAN_BUCKET_NAME,
             "content_type": content_type,
             "expires_in_seconds": 300,
-        })
+        }))
     except Exception as e:
         logging.error(f"Impossible de générer une Signed URL GCS : {e}")
-        return jsonify({"error": "Impossible de générer une URL d'upload sécurisée"}), 500
+        return add_cors_headers(jsonify({"error": "Impossible de générer une URL d'upload sécurisée"})), 500
 
 
-@app.route("/api/identite/direct", methods=["POST"])
+@app.route("/api/identite/direct", methods=["POST", "OPTIONS"])
 def submit_direct_identity():
     """Enregistre directement une pièce d'identité lue localement par MRZ sur Android, sans passer par le LLM."""
-    if not is_authorized_request():
-        return jsonify({"error": "Unauthorized"}), 401
+    if request.method == "OPTIONS":
+        return add_cors_headers(app.make_response(("", 204)))
+
+    user = match_store.verify_firebase_request(request)
+    if not user and not is_authorized_request():
+        return add_cors_headers(jsonify({"error": "Unauthorized"})), 401
+    if user and not user.get("approved"):
+        return add_cors_headers(jsonify({"error": "Compte en attente de validation par l'administrateur.", "code": "PENDING_APPROVAL"})), 403
 
     payload = request.get_json(silent=True) or {}
     nom = (payload.get("nom") or "").strip()
     prenom = (payload.get("prenom") or "").strip()
     if not nom or not prenom:
-        return jsonify({"error": "Champs nom et prenom obligatoires"}), 400
+        return add_cors_headers(jsonify({"error": "Champs nom et prenom obligatoires"})), 400
 
     first_name = slugify_filename_part(prenom)
     last_name = slugify_filename_part(nom)
@@ -555,41 +709,58 @@ def submit_direct_identity():
     }
 
     try:
-        bucket = storage_client.bucket(RESULTS_BUCKET_NAME)
-        result_blob = bucket.blob(result_filename)
-        result_blob.upload_from_string(
-            json.dumps(pid_record, indent=4, ensure_ascii=False),
-            content_type="application/json",
-        )
-        logging.info(f"Identité MRZ directe sauvegardée sous {result_filename} (sans LLM)")
-
-        # Vérifier si ce nom/prénom correspond déjà à un joueur du roster ou d'une licence scannée
-        matched = False
-        try:
-            participants = get_participants_data()
-            matched = any(
-                names_match(p.get("nom"), p.get("prenom"), pid_record)
-                for p in participants.values()
+        match_id = None
+        if user:
+            active_match = match_store.get_or_create_active_match(user)
+            match_id = active_match["matchId"]
+            match_store.save_match_identity(match_id, result_filename, pid_record)
+            logging.info(f"Identité MRZ directe sauvegardée dans Firestore matches/{match_id} ({result_filename})")
+            participants = get_match_participants_data(match_id)
+            match_store.log_activity(
+                "identity_mrz_direct",
+                user=user,
+                match_id=match_id,
+                details={"nom": nom, "prenom": prenom, "subtype": pid_record["document_subtype"]},
             )
-        except Exception as e:
-            logging.warning(f"Impossible de vérifier la correspondance immédiate pour {result_filename}: {e}")
+        else:
+            bucket = storage_client.bucket(RESULTS_BUCKET_NAME)
+            result_blob = bucket.blob(result_filename)
+            result_blob.upload_from_string(
+                json.dumps(pid_record, indent=4, ensure_ascii=False),
+                content_type="application/json",
+            )
+            logging.info(f"Identité MRZ directe sauvegardée sous {result_filename} (sans LLM, legacy GCS)")
+            participants = get_participants_data()
 
-        return jsonify({
+        matched = any(
+            names_match(p.get("nom"), p.get("prenom"), pid_record)
+            for p in participants.values()
+        )
+
+        return add_cors_headers(jsonify({
             "status": "done",
+            "matchId": match_id,
             "result_file": result_filename,
             "nom": nom,
             "prenom": prenom,
             "matched": matched,
-        }), 200
+        })), 200
     except Exception as e:
         logging.error(f"Erreur lors de l'enregistrement direct de l'identité : {e}")
-        return jsonify({"error": str(e)}), 500
+        return add_cors_headers(jsonify({"error": str(e)})), 500
 
 
 @app.route("/api/scan-status/<path:object_name>", methods=["GET"])
 def get_scan_status(object_name):
     """Retourne l'état du traitement OCR asynchrone (pending/processing/done/error) pour un fichier uploadé."""
     try:
+        match_id, _ = match_store.parse_match_id_from_object_name(object_name)
+        if match_id:
+            fs_status = match_store.get_match_scan_status(match_id, object_name)
+            if not fs_status:
+                return jsonify({"status": "pending", "file_name": object_name, "matchId": match_id}), 200
+            return jsonify(fs_status), 200
+
         bucket = storage_client.bucket(RESULTS_BUCKET_NAME)
         status_blob = bucket.blob(f"STATUS_{object_name}.json")
         if not status_blob.exists():
@@ -725,14 +896,272 @@ Retourne UNIQUEMENT un JSON valide de cette forme :
         return add_cors_headers(jsonify({"error": str(e)})), 500
 
 
+@app.route("/api/me", methods=["GET", "OPTIONS"])
+def api_me():
+    """Retourne le profil JAE connecté, sa rencontre active unique (si approuvé) et son historique."""
+    if request.method == "OPTIONS":
+        return add_cors_headers(app.make_response(("", 204)))
+
+    user = match_store.verify_firebase_request(request)
+    if not user:
+        return add_cors_headers(jsonify({"error": "Authentication required"})), 401
+
+    if not user.get("approved"):
+        return add_cors_headers(jsonify({
+            "user": user,
+            "approved": False,
+            "activeMatch": None,
+            "matches": [],
+        })), 200
+
+    active_match = match_store.get_or_create_active_match(user)
+    matches = match_store.list_user_matches(user["uid"])
+    return add_cors_headers(jsonify({
+        "user": user,
+        "approved": True,
+        "activeMatch": active_match,
+        "matches": matches,
+    })), 200
+
+
+@app.route("/api/matches/new", methods=["POST", "OPTIONS"])
+def api_new_match():
+    """Archive l'ancienne rencontre active du JAE connecté et en crée une nouvelle unique."""
+    if request.method == "OPTIONS":
+        return add_cors_headers(app.make_response(("", 204)))
+
+    user = match_store.verify_firebase_request(request)
+    if not user:
+        return add_cors_headers(jsonify({"error": "Authentication required"})), 401
+    if not user.get("approved"):
+        return add_cors_headers(jsonify({"error": "Compte en attente de validation par l'administrateur.", "code": "PENDING_APPROVAL"})), 403
+
+    new_match = match_store.create_new_active_match(user)
+    match_store.log_activity("match_created", user=user, match_id=new_match["matchId"])
+    return add_cors_headers(jsonify({
+        "status": "created",
+        "matchId": new_match["matchId"],
+        "match": new_match,
+    })), 200
+
+
+def _authorize_match_access(match_id):
+    user = match_store.verify_firebase_request(request)
+    if not user:
+        return None, None, (jsonify({"error": "Authentication required"}), 401)
+    if not user.get("approved"):
+        return user, None, (jsonify({"error": "Compte en attente de validation par l'administrateur.", "code": "PENDING_APPROVAL"}), 403)
+    match_doc = match_store.get_match(match_id)
+    if not match_doc:
+        return user, None, (jsonify({"error": "Rencontre introuvable"}), 404)
+    if match_doc.get("ownerUid") and match_doc.get("ownerUid") != user["uid"] and not user.get("isAdmin"):
+        return user, None, (jsonify({"error": "Accès interdit à cette rencontre"}), 403)
+    return user, match_doc, None
+
+
+def _require_admin():
+    user = match_store.verify_firebase_request(request)
+    if not user:
+        return None, (jsonify({"error": "Authentication required"}), 401)
+    if not user.get("isAdmin"):
+        return user, (jsonify({"error": "Accès administrateur requis"}), 403)
+    return user, None
+
+
+@app.route("/admin", methods=["GET"])
+def serve_admin_page():
+    return render_template("admin.html", build_info=get_build_info())
+
+
+@app.route("/mobile-auth", methods=["GET"])
+def serve_mobile_auth():
+    return render_template("oauth_bridge.html", target="mobile")
+
+
+@app.route("/ext-auth", methods=["GET"])
+def serve_ext_auth():
+    return render_template("oauth_bridge.html", target="extension")
+
+
+@app.route("/api/admin/overview", methods=["GET"])
+def api_admin_overview():
+    user, err = _require_admin()
+    if err:
+        return err
+    users = match_store.list_all_users(limit=200)
+    matches = match_store.list_all_matches(limit=200)
+    logs = match_store.list_activity_logs(limit=150)
+    stats = {
+        "totalUsers": len(users),
+        "activeMatches": sum(1 for m in matches if m.get("status") == "active"),
+        "archivedMatches": sum(1 for m in matches if m.get("status") == "archived"),
+        "totalEvents": len(logs),
+        "errorEvents": sum(1 for l in logs if l.get("severity") == "error"),
+    }
+    return jsonify({
+        "admin": user,
+        "stats": stats,
+        "users": users,
+        "matches": matches,
+        "logs": logs,
+    }), 200
+
+
+@app.route("/api/admin/matches/<match_id>/archive", methods=["POST"])
+def api_admin_archive_match(match_id):
+    user, err = _require_admin()
+    if err:
+        return err
+    ok = match_store.archive_match_by_id(match_id)
+    if not ok:
+        return jsonify({"error": "Rencontre introuvable"}), 404
+    match_store.log_activity("admin_archive_match", user=user, match_id=match_id)
+    return jsonify({"status": "archived", "matchId": match_id}), 200
+
+
+@app.route("/api/admin/matches/<match_id>", methods=["DELETE"])
+def api_admin_delete_match(match_id):
+    user, err = _require_admin()
+    if err:
+        return err
+    ok = match_store.delete_match_recursive(match_id)
+    if not ok:
+        return jsonify({"error": "Rencontre introuvable"}), 404
+    match_store.log_activity("admin_delete_match", user=user, match_id=match_id)
+    return jsonify({"status": "deleted", "matchId": match_id}), 200
+
+
+@app.route("/api/admin/users/<target_uid>", methods=["POST"])
+def api_admin_update_user(target_uid):
+    user, err = _require_admin()
+    if err:
+        return err
+    payload = request.get_json(silent=True) or {}
+    updated = match_store.update_user_access(
+        target_uid,
+        approved=payload.get("approved"),
+        role=payload.get("role"),
+    )
+    if not updated:
+        return jsonify({"error": "Utilisateur introuvable"}), 404
+    match_store.log_activity(
+        "admin_update_user",
+        user=user,
+        details={"targetUid": target_uid, "email": updated.get("email"), "approved": updated.get("approved"), "role": updated.get("role")},
+    )
+    return jsonify(updated), 200
+
+
+@app.route("/api/admin/preapprove", methods=["POST"])
+def api_admin_preapprove():
+    user, err = _require_admin()
+    if err:
+        return err
+    payload = request.get_json(silent=True) or {}
+    email = (payload.get("email") or "").strip()
+    role = payload.get("role") or "user"
+    res = match_store.preapprove_email(email, role=role)
+    if not res:
+        return jsonify({"error": "Email invalide"}), 400
+    match_store.log_activity("admin_preapprove_email", user=user, details=res)
+    return jsonify(res), 200
+
+
+@app.route("/api/admin/cleanup-archived", methods=["POST"])
+def api_admin_cleanup_archived():
+    user, err = _require_admin()
+    if err:
+        return err
+    matches = match_store.list_all_matches(limit=500)
+    deleted_ids = []
+    for m in matches:
+        if m.get("status") == "archived":
+            if match_store.delete_match_recursive(m["matchId"]):
+                deleted_ids.append(m["matchId"])
+    match_store.log_activity(
+        "admin_cleanup_archived",
+        user=user,
+        details={"deletedCount": len(deleted_ids)},
+    )
+    return jsonify({"status": "cleaned", "deletedCount": len(deleted_ids), "deletedIds": deleted_ids}), 200
+
+
+@app.route("/api/matches/<match_id>/participants", methods=["GET"])
+def api_match_participants(match_id):
+    _, _, err = _authorize_match_access(match_id)
+    if err:
+        return err
+    return jsonify(list(get_match_participants_data(match_id).values())), 200
+
+
+@app.route("/api/matches/<match_id>/roster", methods=["GET", "POST", "OPTIONS"])
+def api_match_roster(match_id):
+    if request.method == "OPTIONS":
+        return add_cors_headers(app.make_response(("", 204)))
+
+    _, match_doc, err = _authorize_match_access(match_id)
+    if err:
+        return add_cors_headers(err[0]), err[1]
+
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        roster = {
+            "tenupUrl": (payload.get("tenupUrl") or "").strip(),
+            "team1Name": (payload.get("team1Name") or "").strip(),
+            "team1Players": payload.get("team1Players") or [],
+            "team2Name": (payload.get("team2Name") or "").strip(),
+            "team2Players": payload.get("team2Players") or [],
+            "updatedAt": match_store.utc_now_iso(),
+        }
+        match_store.save_match_roster(match_id, roster)
+        return add_cors_headers(jsonify({"matchId": match_id, **roster})), 200
+
+    roster = match_doc.get("roster") or {}
+    return add_cors_headers(jsonify({"matchId": match_id, **roster})), 200
+
+
+@app.route("/api/matches/<match_id>/board-state", methods=["GET", "POST"])
+def api_match_board_state(match_id):
+    _, match_doc, err = _authorize_match_access(match_id)
+    if err:
+        return err
+
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        state = {
+            "team1Name": (payload.get("team1Name") or "").strip(),
+            "team2Name": (payload.get("team2Name") or "").strip(),
+            "tenupUrl": (payload.get("tenupUrl") or "").strip(),
+            "assignments": payload.get("assignments") or {},
+            "checked": payload.get("checked") or {},
+            "updatedAt": match_store.utc_now_iso(),
+        }
+        match_store.save_match_board_state(match_id, state)
+        match_store.log_activity(
+            "board_updated",
+            user=_,
+            match_id=match_id,
+            details={
+                "team1Name": state["team1Name"],
+                "team2Name": state["team2Name"],
+                "assignedCount": len(state["assignments"]),
+            },
+        )
+        return jsonify(state), 200
+
+    return jsonify(match_doc.get("boardState") or {}), 200
+
+
 @app.route("/api/tenup/roster", methods=["GET", "POST", "OPTIONS"])
 def tenup_roster():
     """Lit ou enregistre directement (sans LLM) les compositions d'équipes Ten'Up parsées dans le DOM."""
     if request.method == "OPTIONS":
         return add_cors_headers(app.make_response(("", 204)))
 
+    user = match_store.verify_firebase_request(request)
+
     if request.method == "POST":
-        if not is_authorized_request():
+        if not user and not is_authorized_request():
             return add_cors_headers(jsonify({"error": "Unauthorized"})), 401
         payload = request.get_json(silent=True) or {}
         roster = {
@@ -744,6 +1173,28 @@ def tenup_roster():
             "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
         }
         try:
+            if user:
+                create_new = bool(payload.get("newMatch"))
+                active_match = (
+                    match_store.create_new_active_match(user)
+                    if create_new
+                    else match_store.get_or_create_active_match(user)
+                )
+                match_id = active_match["matchId"]
+                match_store.save_match_roster(match_id, roster)
+                match_store.log_activity(
+                    "roster_imported",
+                    user=user,
+                    match_id=match_id,
+                    details={
+                        "team1Name": roster["team1Name"],
+                        "team1Count": len(roster["team1Players"]),
+                        "team2Name": roster["team2Name"],
+                        "team2Count": len(roster["team2Players"]),
+                    },
+                )
+                return add_cors_headers(jsonify({"matchId": match_id, **roster})), 200
+
             bucket = storage_client.bucket(RESULTS_BUCKET_NAME)
             bucket.blob("ROSTER_CURRENT.json").upload_from_string(
                 json.dumps(roster, indent=2, ensure_ascii=False),
@@ -751,8 +1202,12 @@ def tenup_roster():
             )
             return add_cors_headers(jsonify(roster)), 200
         except Exception as e:
-            logging.error(f"Erreur sauvegarde ROSTER_CURRENT.json : {e}")
+            logging.error(f"Erreur sauvegarde roster Ten'Up : {e}")
             return add_cors_headers(jsonify({"error": str(e)})), 500
+
+    if user:
+        active_match = match_store.get_or_create_active_match(user)
+        return add_cors_headers(jsonify({"matchId": active_match["matchId"], **(active_match.get("roster") or {})})), 200
 
     try:
         bucket = storage_client.bucket(RESULTS_BUCKET_NAME)
@@ -816,19 +1271,15 @@ def api_participants():
 
 
 @app.route("/", methods=["GET"])
-def serve_page():
+@app.route("/m/<match_id>", methods=["GET"])
+def serve_page(match_id=None):
     debug_mode = request.args.get("debug", "false").lower() == "true"
-    # En mode debug (?debug=true), la rencontre démarre vierge ; l'utilisateur charge explicitement le jeu de test.
-    participants_list = (
-        []
-        if debug_mode
-        else list(get_participants_data().values())
-    )
     build_info = get_build_info()
     return render_template(
         "index.html",
-        participants=participants_list,
+        participants=[],
         debug=debug_mode,
+        match_id=match_id or "",
         build_info=build_info,
     )
 

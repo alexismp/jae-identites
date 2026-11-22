@@ -10,8 +10,44 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 
-<body>
-    <div class="container-fluid">
+<body data-initial-match-id="{{ match_id or '' }}">
+    {% if not debug %}
+    <div id="authBar" class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom bg-light flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+            <span id="userBadge" class="small text-muted">Non connecté</span>
+            <span id="matchIdBadge" class="badge bg-secondary d-none" style="font-family: monospace;"></span>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <button id="signOutBtn" class="btn btn-sm btn-outline-secondary d-none">Déconnexion</button>
+        </div>
+    </div>
+
+    <div id="loginModal" class="container py-5 d-none" style="max-width: 420px;">
+        <div class="card shadow-sm p-4">
+            <div class="text-center mb-3">
+                <img src="/static/img/logo.svg" alt="JAE Identités" width="56" height="56">
+                <h5 class="mt-2 mb-1">Connexion Juge-Arbitre</h5>
+                <p class="text-muted small mb-0">Connectez-vous via OAuth pour accéder à votre rencontre active.</p>
+            </div>
+            <div id="authError" class="alert alert-danger py-2 small d-none"></div>
+            <div class="d-grid gap-2">
+                <button id="googleSignInBtn" class="btn btn-primary">Continuer avec Google</button>
+                <button id="microsoftSignInBtn" class="btn btn-outline-dark btn-sm">Continuer avec Microsoft</button>
+                <button id="appleSignInBtn" class="btn btn-outline-secondary btn-sm">Continuer avec Apple</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div id="pendingApprovalBox" class="container py-5 d-none" style="max-width: 520px;">
+        <div class="alert alert-warning shadow-sm p-4 text-center">
+            <h5 class="mb-2">Compte en attente de validation</h5>
+            <p class="mb-2">Votre compte JAE a bien été créé, mais l'accès à l'application est restreint et doit être approuvé par l'administrateur.</p>
+            <p class="small text-muted mb-0">Une fois validé dans la console d'administration, rafraîchissez simplement cette page.</p>
+        </div>
+    </div>
+
+    <div id="boardContainer" class="container-fluid">
         {% if debug %}
         <div class="alert alert-warning d-flex flex-wrap justify-content-center align-items-center gap-2 py-2 mb-2 mt-2" role="alert">
             <span><strong>Mode Debug</strong> — rencontre locale isolée (aucune écriture dans les buckets).</span>
@@ -140,6 +176,9 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="/static/js/firebase-config.js"></script>
     <script src="/static/js/script.js"></script>
 </body>
 

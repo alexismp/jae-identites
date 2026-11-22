@@ -54,6 +54,36 @@ document.addEventListener('DOMContentLoaded', function () {
     let team2LockedByTenup = false;
     let lastDropWarningAt = 0;
 
+    let currentMatchId = (document.body.dataset.initialMatchId || '').trim() || null;
+    let currentUser = null;
+    let pollingStarted = false;
+
+    async function authFetch(url, options = {}) {
+        const headers = Object.assign({}, options.headers || {});
+        if (currentUser) {
+            const token = await currentUser.getIdToken();
+            headers['Authorization'] = 'Bearer ' + token;
+        }
+        return fetch(url, Object.assign({}, options, { headers }));
+    }
+
+    function setActiveMatchInUrl(matchId, pushHistory = false) {
+        currentMatchId = matchId;
+        const badge = document.getElementById('matchIdBadge');
+        if (badge && matchId) {
+            badge.textContent = 'Rencontre : ' + matchId;
+            badge.classList.remove('d-none');
+        }
+        const targetPath = '/m/' + encodeURIComponent(matchId);
+        if (window.location.pathname !== targetPath) {
+            if (pushHistory) {
+                window.history.pushState({ matchId }, '', targetPath);
+            } else {
+                window.history.replaceState({ matchId }, '', targetPath);
+            }
+        }
+    }
+
     function normalizeClubText(value) {
         return (value || '')
             .normalize('NFD')
@@ -156,10 +186,10 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function scheduleSaveBoardState() {
-        if (isDebugMode) return;
+        if (isDebugMode || !currentUser || !currentMatchId) return;
         clearTimeout(saveTimer);
         saveTimer = setTimeout(() => {
-            fetch('/api/board-state', {
+            authFetch(`/api/matches/${encodeURIComponent(currentMatchId)}/board-state`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(collectBoardState())
@@ -457,31 +487,36 @@ document.addEventListener('DOMContentLoaded', function () {
     var resetMatchBtn = document.getElementById('resetMatchBtn');
     if (resetMatchBtn) {
         resetMatchBtn.addEventListener('click', function () {
-            if (!confirm("Archiver les résultats actuels et repartir d'une rencontre vierge ?")) {
+            if (!confirm("Archiver la rencontre active et démarrer une nouvelle rencontre vierge ?")) {
                 return;
             }
             resetMatchBtn.disabled = true;
-            fetch('/api/reset-match', { method: 'POST' })
+            authFetch('/api/matches/new', { method: 'POST' })
                 .then(response => {
                     if (!response.ok) throw new Error('Erreur serveur (' + response.status + ')');
                     return response.json();
                 })
-                .then(() => {
+                .then(res => {
+                    lastBoardUpdatedAt = null;
                     clearBoardUi();
+                    if (res && res.matchId) {
+                        setActiveMatchInUrl(res.matchId, true);
+                    }
                 })
-                .catch(err => alert('Impossible de réinitialiser la rencontre : ' + err.message))
+                .catch(err => alert('Impossible de créer une nouvelle rencontre : ' + err.message))
                 .finally(() => {
                     resetMatchBtn.disabled = false;
                 });
         });
     }
 
-    // Polling logic (désactivé en mode debug pour préserver la rencontre vierge ou le jeu de test chargé)
+    // Polling logic (désactivé en mode debug ou tant que l'utilisateur n'est pas connecté)
     function pollParticipants() {
-        if (isDebugMode) return;
-        fetch('/api/participants')
-            .then(response => response.json())
+        if (isDebugMode || !currentUser || !currentMatchId) return;
+        authFetch(`/api/matches/${encodeURIComponent(currentMatchId)}/participants`)
+            .then(response => response.ok ? response.json() : [])
             .then(data => {
+                if (!Array.isArray(data)) return;
                 // Create a Set of current participant IDs for O(1) lookup
                 const currentIds = new Set(data.map(p => p.licence));
 
@@ -535,9 +570,9 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function pollTenupRoster() {
-        if (isDebugMode) return;
-        fetch('/api/tenup/roster')
-            .then(r => r.json())
+        if (isDebugMode || !currentUser || !currentMatchId) return;
+        authFetch(`/api/matches/${encodeURIComponent(currentMatchId)}/roster`)
+            .then(r => r.ok ? r.json() : null)
             .then(roster => {
                 if (!roster) return;
                 if (roster.tenupUrl && tenupUrlInput && !tenupUrlInput.value.trim()) {
@@ -568,9 +603,9 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function pollBoardState() {
-        if (isDebugMode || isDragging) return;
-        fetch('/api/board-state')
-            .then(r => r.json())
+        if (isDebugMode || isDragging || !currentUser || !currentMatchId) return;
+        authFetch(`/api/matches/${encodeURIComponent(currentMatchId)}/board-state`)
+            .then(r => r.ok ? r.json() : null)
             .then(state => {
                 if (!state || !state.updatedAt || state.updatedAt === lastBoardUpdatedAt) return;
                 lastBoardUpdatedAt = state.updatedAt;
@@ -615,13 +650,107 @@ document.addEventListener('DOMContentLoaded', function () {
             .catch(err => console.error('Error polling board state:', err));
     }
 
-    // Poll every 5 seconds
-    pollTenupRoster();
-    pollBoardState();
-    setInterval(function () {
-        pollParticipants();
-        pollBoardState();
-    }, 5000);
-    setInterval(pollTenupRoster, 10000);
+    function startPollingLoop() {
+        if (pollingStarted) return;
+        pollingStarted = true;
+        setInterval(function () {
+            pollParticipants();
+            pollBoardState();
+        }, 5000);
+        setInterval(pollTenupRoster, 10000);
+    }
+
+    // Initialisation Firebase Auth (hors mode debug)
+    if (!isDebugMode && window.firebase && window.JAE_FIREBASE_CONFIG) {
+        firebase.initializeApp(window.JAE_FIREBASE_CONFIG);
+        const auth = firebase.auth();
+        const loginModal = document.getElementById('loginModal');
+        const pendingApprovalBox = document.getElementById('pendingApprovalBox');
+        const boardContainer = document.getElementById('boardContainer');
+        const userBadge = document.getElementById('userBadge');
+        const signOutBtn = document.getElementById('signOutBtn');
+        const adminLinkBtn = document.getElementById('adminLinkBtn');
+        const authError = document.getElementById('authError');
+
+        function showAuthError(msg) {
+            if (!authError) return;
+            authError.textContent = msg;
+            authError.classList.remove('d-none');
+        }
+
+        async function signInWithOAuthProvider(provider) {
+            if (authError) authError.classList.add('d-none');
+            try {
+                await auth.signInWithPopup(provider);
+            } catch (e) {
+                if (e && e.code === 'auth/popup-blocked') {
+                    await auth.signInWithRedirect(provider);
+                } else {
+                    showAuthError(e.message || 'Échec de connexion OAuth');
+                }
+            }
+        }
+
+        const googleBtn = document.getElementById('googleSignInBtn');
+        if (googleBtn) {
+            googleBtn.addEventListener('click', () => signInWithOAuthProvider(new firebase.auth.GoogleAuthProvider()));
+        }
+        const msBtn = document.getElementById('microsoftSignInBtn');
+        if (msBtn) {
+            msBtn.addEventListener('click', () => signInWithOAuthProvider(new firebase.auth.OAuthProvider('microsoft.com')));
+        }
+        const appleBtn = document.getElementById('appleSignInBtn');
+        if (appleBtn) {
+            appleBtn.addEventListener('click', () => signInWithOAuthProvider(new firebase.auth.OAuthProvider('apple.com')));
+        }
+
+        if (signOutBtn) {
+            signOutBtn.addEventListener('click', () => auth.signOut());
+        }
+
+        auth.onAuthStateChanged(async user => {
+            currentUser = user;
+            if (!user) {
+                if (loginModal) loginModal.classList.remove('d-none');
+                if (pendingApprovalBox) pendingApprovalBox.classList.add('d-none');
+                if (boardContainer) boardContainer.classList.add('d-none');
+                if (userBadge) userBadge.textContent = 'Non connecté';
+                if (signOutBtn) signOutBtn.classList.add('d-none');
+                if (adminLinkBtn) adminLinkBtn.classList.add('d-none');
+                return;
+            }
+
+            if (loginModal) loginModal.classList.add('d-none');
+            if (userBadge) userBadge.textContent = user.email;
+            if (signOutBtn) signOutBtn.classList.remove('d-none');
+
+            try {
+                const meResp = await authFetch('/api/me');
+                const me = await meResp.json();
+                if (me && me.approved === false) {
+                    if (pendingApprovalBox) pendingApprovalBox.classList.remove('d-none');
+                    if (boardContainer) boardContainer.classList.add('d-none');
+                    return;
+                }
+                if (pendingApprovalBox) pendingApprovalBox.classList.add('d-none');
+                if (boardContainer) boardContainer.classList.remove('d-none');
+                if (me && me.user && me.user.isAdmin && adminLinkBtn) {
+                    adminLinkBtn.classList.remove('d-none');
+                }
+                const resolvedMatchId = currentMatchId || (me && me.activeMatch && me.activeMatch.matchId);
+                if (resolvedMatchId) {
+                    setActiveMatchInUrl(resolvedMatchId, false);
+                    lastBoardUpdatedAt = null;
+                    clearBoardUi();
+                    pollTenupRoster();
+                    pollParticipants();
+                    pollBoardState();
+                    startPollingLoop();
+                }
+            } catch (e) {
+                console.error('Erreur initialisation session JAE:', e);
+            }
+        });
+    }
 
 });
