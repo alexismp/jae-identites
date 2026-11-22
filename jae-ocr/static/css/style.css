@@ -180,6 +180,23 @@ body {
     color: #FFFFFF;
 }
 
+.btn-delete-card {
+    border: none;
+    background: transparent;
+    color: var(--jae-muted);
+    padding: 0 4px;
+    font-size: 0.8rem;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.btn-delete-card:hover {
+    color: #DC2626;
+    background: #FEE2E2;
+}
+
 .participant-card:has(input[type="checkbox"]:checked) {
     border-left-color: var(--jae-green) !important;
     background-color: #F0FDF4 !important;

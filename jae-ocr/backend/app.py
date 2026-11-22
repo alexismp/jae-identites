@@ -1125,6 +1125,21 @@ def api_match_participants(match_id):
     return jsonify(list(get_match_participants_data(match_id).values())), 200
 
 
+@app.route("/api/matches/<match_id>/participants/<path:participant_id>", methods=["DELETE"])
+def api_delete_match_participant(match_id, participant_id):
+    user, _, err = _authorize_match_access(match_id)
+    if err:
+        return err
+    deleted = match_store.delete_match_licence_by_participant(match_id, participant_id)
+    match_store.log_activity(
+        "participant_deleted",
+        user=user,
+        match_id=match_id,
+        details={"participantId": participant_id, "deletedDocs": deleted},
+    )
+    return jsonify({"status": "deleted", "participantId": participant_id, "deletedDocs": deleted}), 200
+
+
 @app.route("/api/matches/<match_id>/roster", methods=["GET", "POST", "OPTIONS"])
 def api_match_roster(match_id):
     if request.method == "OPTIONS":

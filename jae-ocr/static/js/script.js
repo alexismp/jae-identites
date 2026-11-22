@@ -215,19 +215,57 @@ document.addEventListener('DOMContentLoaded', function () {
 
     document.addEventListener('click', function (evt) {
         const copyBtn = evt.target && evt.target.closest('.btn-copy-licence');
-        if (!copyBtn) return;
-        evt.stopPropagation();
-        const val = (copyBtn.dataset.copy || '').trim();
-        if (!val) return;
-        navigator.clipboard.writeText(val).then(() => {
-            const orig = copyBtn.textContent;
-            copyBtn.textContent = '✓';
-            copyBtn.classList.add('copied');
-            setTimeout(() => {
-                copyBtn.textContent = orig;
-                copyBtn.classList.remove('copied');
-            }, 1400);
-        }).catch(err => console.error('Erreur copie licence:', err));
+        if (copyBtn) {
+            evt.stopPropagation();
+            const val = (copyBtn.dataset.copy || '').trim();
+            if (!val) return;
+            navigator.clipboard.writeText(val).then(() => {
+                const orig = copyBtn.textContent;
+                copyBtn.textContent = '✓';
+                copyBtn.classList.add('copied');
+                setTimeout(() => {
+                    copyBtn.textContent = orig;
+                    copyBtn.classList.remove('copied');
+                }, 1400);
+            }).catch(err => console.error('Erreur copie licence:', err));
+            return;
+        }
+
+        const delBtn = evt.target && evt.target.closest('.btn-delete-card');
+        if (delBtn) {
+            evt.stopPropagation();
+            const card = delBtn.closest('.participant-card');
+            if (!card) return;
+            const cardId = card.dataset.id || '';
+            const nomText = (card.querySelector('.card-nom')?.textContent || '').replace('Nom:', '').trim();
+            const prenomText = (card.querySelector('.card-prenom')?.textContent || '').replace('Prénom:', '').trim();
+            const label = [prenomText, nomText].filter(Boolean).join(' ') || cardId;
+            if (!confirm(`Supprimer la fiche de ${label} de cette rencontre ?`)) return;
+
+            if (isDebugMode || isDemoMode || !currentUser || !currentMatchId) {
+                card.remove();
+                return;
+            }
+
+            delBtn.disabled = true;
+            authFetch(`/api/matches/${encodeURIComponent(currentMatchId)}/participants/${encodeURIComponent(cardId)}`, {
+                method: 'DELETE'
+            })
+                .then(r => {
+                    if (!r.ok) throw new Error('Erreur HTTP ' + r.status);
+                    card.remove();
+                    if (latestBoardState && latestBoardState.assignments) {
+                        delete latestBoardState.assignments[cardId];
+                    }
+                    if (latestBoardState && latestBoardState.checked) {
+                        delete latestBoardState.checked[cardId];
+                    }
+                })
+                .catch(err => {
+                    delBtn.disabled = false;
+                    alert('Impossible de supprimer la fiche : ' + err.message);
+                });
+        }
     });
 
     new Sortable(officials, {
@@ -448,10 +486,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const licenceDisplay = participant.licence || '';
         const escapedLicence = String(licenceDisplay).replace(/"/g, '&quot;');
+        const isDeletable = !String(licenceDisplay).startsWith("Ten'Up (");
 
         card.innerHTML = `
             <div class="drag-handle" title="Glisser pour déplacer la fiche">
                 <span>⋮⋮ Déplacer</span>
+                ${isDeletable ? '<button type="button" class="btn-delete-card" title="Supprimer cette fiche">🗑</button>' : ''}
             </div>
             <p class="card-nom"><strong>Nom:</strong> ${participant.image_uri ? `<a href="${participant.image_uri}" target="_blank">${participant.nom}</a>` : participant.nom}</p>
             <p class="card-prenom"><strong>Prénom:</strong> ${participant.prenom}</p>

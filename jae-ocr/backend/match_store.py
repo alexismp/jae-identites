@@ -316,6 +316,45 @@ def save_match_licence(match_id, doc_id, record):
     db.collection("matches").document(match_id).set({"updatedAt": now}, merge=True)
 
 
+def delete_match_licence_by_participant(match_id, participant_id):
+    """Supprime les fiches licences (LIC_) correspondant à participant_id dans une rencontre Firestore."""
+    match_ref = db.collection("matches").document(match_id)
+    snap = match_ref.get()
+    if not snap.exists:
+        return 0
+
+    target = (participant_id or "").strip()
+    deleted = 0
+    for doc in match_ref.collection("licences").stream():
+        d = doc.to_dict() or {}
+        lic = (d.get("licence") or "").strip()
+        if lic == target or doc.id == target:
+            doc.reference.delete()
+            deleted += 1
+
+    # Nettoyer aussi boardState.assignments et boardState.checked
+    match_doc = snap.to_dict() or {}
+    bs = dict(match_doc.get("boardState") or {})
+    assignments = dict(bs.get("assignments") or {})
+    checked = dict(bs.get("checked") or {})
+    changed = False
+    if target in assignments:
+        del assignments[target]
+        changed = True
+    if target in checked:
+        del checked[target]
+        changed = True
+    now = utc_now_iso()
+    if changed:
+        bs["assignments"] = assignments
+        bs["checked"] = checked
+        bs["updatedAt"] = now
+        match_ref.set({"boardState": bs, "updatedAt": now}, merge=True)
+    elif deleted:
+        match_ref.set({"updatedAt": now}, merge=True)
+    return deleted
+
+
 def save_match_identity(match_id, doc_id, record):
     now = utc_now_iso()
     db.collection("matches").document(match_id).collection("identities").document(sanitize_doc_id(doc_id)).set(record)
