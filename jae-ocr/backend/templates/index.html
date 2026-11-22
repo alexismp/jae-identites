@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JAE-OCR</title>
+    <title>JAE Identités</title>
     <link rel="icon" type="image/svg+xml" href="/static/img/logo.svg">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
@@ -29,170 +29,152 @@
         </div>
     </div>
     <div id="demoToast" class="alert alert-info text-center py-2 mb-0 d-none" role="alert"></div>
-    {% elif not debug %}
-    <div id="authBar" class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom bg-light flex-wrap gap-2">
-        <div class="d-flex align-items-center gap-2">
-            <span id="userBadge" class="small text-muted">Non connecté</span>
-            <span id="matchIdBadge" class="badge bg-secondary d-none" style="font-family: monospace;"></span>
-        </div>
-        <div class="d-flex align-items-center gap-2">
-            <button id="signOutBtn" class="btn btn-sm btn-outline-secondary d-none">Déconnexion</button>
-        </div>
-    </div>
+    {% endif %}
 
+    {% if not debug and not demo %}
     <div id="loginModal" class="container py-5 d-none" style="max-width: 420px;">
-        <div class="card shadow-sm p-4">
+        <div class="card shadow-sm border-0 p-4" style="border-radius: 16px;">
             <div class="text-center mb-3">
-                <img src="/static/img/logo.svg" alt="JAE Identités" width="56" height="56">
-                <h5 class="mt-2 mb-1">Connexion Juge-Arbitre</h5>
+                <img src="/static/img/logo.svg" alt="JAE Identités" width="60" height="60">
+                <h5 class="mt-3 mb-1 fw-bold" style="color: #0F2B46;">Connexion Juge-Arbitre</h5>
                 <p class="text-muted small mb-0">Connectez-vous avec Google pour accéder à votre rencontre active.</p>
             </div>
             <div id="authError" class="alert alert-danger py-2 small d-none"></div>
-            <div class="d-grid gap-2">
-                <button id="googleSignInBtn" class="btn btn-primary">Continuer avec Google</button>
-                <a href="/demo" class="btn btn-outline-secondary btn-sm mt-2">Essayer la démo interactive (sans connexion) →</a>
+            <div class="d-grid gap-2 mt-2">
+                <button id="googleSignInBtn" class="btn btn-primary fw-semibold py-2">Continuer avec Google</button>
+                <a href="/demo" class="btn btn-outline-secondary btn-sm mt-1">Essayer la démo interactive (sans connexion) →</a>
             </div>
+        </div>
+    </div>
+
+    <div id="pendingApprovalBox" class="container py-5 d-none" style="max-width: 520px;">
+        <div class="alert alert-warning shadow-sm p-4 text-center" style="border-radius: 14px;">
+            <h5 class="mb-2 fw-bold">Compte en attente de validation</h5>
+            <p class="mb-2">Votre compte JAE a bien été créé, mais l'accès à l'application est restreint et doit être approuvé par l'administrateur.</p>
+            <p class="small text-muted mb-3">Une fois validé dans la console d'administration, rafraîchissez simplement cette page.</p>
+            <button id="pendingSignOutBtn" class="btn btn-sm btn-outline-dark" onclick="firebase.auth().signOut()">Changer de compte</button>
         </div>
     </div>
     {% endif %}
 
-    <div id="pendingApprovalBox" class="container py-5 d-none" style="max-width: 520px;">
-        <div class="alert alert-warning shadow-sm p-4 text-center">
-            <h5 class="mb-2">Compte en attente de validation</h5>
-            <p class="mb-2">Votre compte JAE a bien été créé, mais l'accès à l'application est restreint et doit être approuvé par l'administrateur.</p>
-            <p class="small text-muted mb-0">Une fois validé dans la console d'administration, rafraîchissez simplement cette page.</p>
-        </div>
-    </div>
+    <div id="boardContainer" class="flex-grow-1 d-flex flex-column">
+        <!-- Barre supérieure professionnelle -->
+        <header class="jae-navbar">
+            <div class="container-fluid d-flex flex-wrap justify-content-between align-items-center gap-2 px-0">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <img src="/static/img/logo.svg" alt="JAE Identités" width="38" height="38" style="flex-shrink: 0;">
+                    <h1 contenteditable="true" class="jae-title-editable">Nom de la rencontre</h1>
+                    <span id="matchIdBadge" class="jae-match-pill d-none"></span>
+                </div>
 
-    <div id="boardContainer" class="container-fluid">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <input type="file" id="importFile" class="d-none">
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-light fw-semibold dropdown-toggle px-3" type="button" id="actionsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                            Actions
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow-sm" aria-labelledby="actionsDropdown">
+                            <li><button id="toggleView" class="dropdown-item" type="button">Vue Condensée</button></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><button id="exportBtn" class="dropdown-item" type="button">Exporter une rencontre</button></li>
+                            <li><button id="importBtn" class="dropdown-item" type="button">Importer une rencontre</button></li>
+                            <li><a href="https://jae-scanner-2500276981.europe-west1.run.app" target="_blank" rel="noopener noreferrer" class="dropdown-item">Scanner web ↗</a></li>
+                            {% if not debug %}
+                            <li><hr class="dropdown-divider"></li>
+                            <li><button id="resetMatchBtn" class="dropdown-item text-danger fw-semibold" type="button">Nouvelle rencontre</button></li>
+                            <li id="adminMenuDivider" class="d-none"><hr class="dropdown-divider"></li>
+                            <li id="adminMenuItem" class="d-none"><a id="adminLinkBtn" href="/admin" class="dropdown-item fw-semibold">Console d'administration</a></li>
+                            {% endif %}
+                        </ul>
+                    </div>
+
+                    {% if not debug and not demo %}
+                    <span id="userBadge" class="small text-light opacity-75 d-none d-md-inline"></span>
+                    <button id="signOutBtn" class="btn btn-sm btn-outline-light d-none">Déconnexion</button>
+                    {% endif %}
+                </div>
+            </div>
+        </header>
+
         {% if debug %}
-        <div class="alert alert-warning d-flex flex-wrap justify-content-center align-items-center gap-2 py-2 mb-2 mt-2" role="alert">
+        <div class="alert alert-warning d-flex flex-wrap justify-content-center align-items-center gap-2 py-2 mb-0 rounded-0" role="alert">
             <span><strong>Mode Debug</strong> — rencontre locale isolée (aucune écriture dans les buckets).</span>
             <button id="loadTestDataBtn" class="btn btn-sm btn-warning">Charger le jeu de test</button>
             <button id="clearDebugMatchBtn" class="btn btn-sm btn-outline-dark">Rencontre vierge</button>
             <a href="/" class="alert-link ms-2">Quitter le mode debug</a>
         </div>
         {% endif %}
-        <div class="d-flex justify-content-center align-items-center gap-3 my-3">
-            <img src="/static/img/logo.svg" alt="JAE Identités" width="52" height="52" style="flex-shrink: 0;">
-            <h1 contenteditable="true" class="text-center m-0">Nom de la rencontre</h1>
-        </div>
-        <div class="d-flex justify-content-center align-items-center gap-2 mb-3 flex-wrap">
-            <input type="url" id="tenupUrlInput" class="form-control form-control-sm" style="max-width: 480px;" placeholder="URL officielle Ten'Up de la rencontre (https://tenup.fft.fr/...)">
-            <a id="tenupUrlLink" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary disabled" aria-disabled="true">Ouvrir Ten'Up ↗</a>
-        </div>
-        <div class="text-center mb-4">
-            <button id="toggleView" class="btn btn-primary">Vue Condensée</button>
-            <button id="exportBtn" class="btn btn-success">Exporter une rencontre</button>
-            <input type="file" id="importFile" class="d-none">
-            <button id="importBtn" class="btn btn-info">Importer une rencontre</button>
-            {% if not debug %}
-            <button id="resetMatchBtn" class="btn btn-outline-danger ms-2">Nouvelle rencontre</button>
-            {% endif %}
-            <a href="https://jae-scanner-2500276981.europe-west1.run.app" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary ms-2" title="Scanner web de secours (privilégiez l'application Android)">Scanner web (secours) ↗</a>
-        </div>
 
-        <div class="row">
-            <div class="col-md-12">
-                <h2>Officiels</h2>
-                <div id="officials" class="list-group d-flex flex-row flex-wrap"></div>
-            </div>
-        </div>
-
-        <div class="row mt-4">
-            <div class="col-md-6">
-                <h2 id="team1Title" contenteditable="true">Equipe 1</h2>
-                <div id="team1" class="list-group d-flex flex-row flex-wrap">
-                    {% for p in participants if p.team_slot == 'team1' %}
-                    <div class="list-group-item participant-card" data-id="{{ p.licence }}" data-expected-slot="{{ p.expected_team_slot or '' }}" data-club="{{ p.club or '' }}">
-                        <p><strong>Nom:</strong>
-                            {% if p.image_uri %}
-                            <a href="{{ p.image_uri }}" target="_blank">{{ p.nom }}</a>
-                            {% else %}
-                            {{ p.nom }}
-                            {% endif %}
-                        </p>
-                        <p><strong>Prénom:</strong> {{ p.prenom }}</p>
-                        <p><strong>Classement:</strong> {{ p.classement }}</p>
-                        <p class="card-detail"><strong>Licence:</strong> {{ p.licence }}</p>
-                        <p class="card-detail"><strong>Année validité:</strong> {{ p.annee_validite }}</p>
-                        <p class="card-detail"><strong>Club:</strong> {{ p.club }}</p>
-                        <p class="card-detail"><strong>Statut:</strong> {{ p.statut }}</p>
-                        <div class="form-check card-detail">
-                            <input class="form-check-input" type="checkbox" {% if p.id_checked %}checked{% endif %}>
-                            <label class="form-check-label">Pièce d'identité</label>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-            <div class="col-md-6">
-                <h2 id="team2Title" contenteditable="true">Equipe 2</h2>
-                <div id="team2" class="list-group d-flex flex-row flex-wrap">
-                    {% for p in participants if p.team_slot == 'team2' %}
-                    <div class="list-group-item participant-card" data-id="{{ p.licence }}" data-expected-slot="{{ p.expected_team_slot or '' }}" data-club="{{ p.club or '' }}">
-                        <p><strong>Nom:</strong>
-                            {% if p.image_uri %}
-                            <a href="{{ p.image_uri }}" target="_blank">{{ p.nom }}</a>
-                            {% else %}
-                            {{ p.nom }}
-                            {% endif %}
-                        </p>
-                        <p><strong>Prénom:</strong> {{ p.prenom }}</p>
-                        <p><strong>Classement:</strong> {{ p.classement }}</p>
-                        <p class="card-detail"><strong>Licence:</strong> {{ p.licence }}</p>
-                        <p class="card-detail"><strong>Année validité:</strong> {{ p.annee_validite }}</p>
-                        <p class="card-detail"><strong>Club:</strong> {{ p.club }}</p>
-                        <p class="card-detail"><strong>Statut:</strong> {{ p.statut }}</p>
-                        <div class="form-check card-detail">
-                            <input class="form-check-input" type="checkbox" {% if p.id_checked %}checked{% endif %}>
-                            <label class="form-check-label">Pièce d'identité</label>
-                        </div>
-                    </div>
-                    {% endfor %}
+        <!-- Barre Ten'Up compacte -->
+        <div class="jae-tenup-bar">
+            <div class="container-fluid d-flex justify-content-center align-items-center gap-2 flex-wrap px-0">
+                <div class="input-group input-group-sm" style="max-width: 620px;">
+                    <span class="input-group-text bg-light text-muted fw-semibold">Ten'Up</span>
+                    <input type="url" id="tenupUrlInput" class="form-control" placeholder="URL officielle Ten'Up de la rencontre (https://tenup.fft.fr/...)">
+                    <a id="tenupUrlLink" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-outline-secondary disabled" aria-disabled="true">Ouvrir Ten'Up ↗</a>
                 </div>
             </div>
         </div>
 
-        <div class="row mt-4">
-            <div class="col-md-12">
-                <h2>Non-affecté</h2>
-                <div id="unassigned" class="list-group d-flex flex-row flex-wrap">
-                    {% for p in participants if not p.team_slot %}
-                    <div class="list-group-item participant-card" data-id="{{ p.licence }}" data-expected-slot="{{ p.expected_team_slot or '' }}" data-club="{{ p.club or '' }}">
-                        <p><strong>Nom:</strong>
-                            {% if p.image_uri %}
-                            <a href="{{ p.image_uri }}" target="_blank">{{ p.nom }}</a>
-                            {% else %}
-                            {{ p.nom }}
-                            {% endif %}
-                        </p>
-                        <p><strong>Prénom:</strong> {{ p.prenom }}</p>
-                        <p><strong>Classement:</strong> {{ p.classement }}</p>
-                        <p class="card-detail"><strong>Licence:</strong> {{ p.licence }}</p>
-                        <p class="card-detail"><strong>Année validité:</strong> {{ p.annee_validite }}</p>
-                        <p class="card-detail"><strong>Club:</strong> {{ p.club }}</p>
-                        <p class="card-detail"><strong>Statut:</strong> {{ p.statut }}</p>
-                        <div class="form-check card-detail">
-                            <input class="form-check-input" type="checkbox" {% if p.id_checked %}checked{% endif %}>
-                            <label class="form-check-label">Pièce d'identité</label>
+        <!-- Zones de la rencontre -->
+        <main class="container-fluid py-3 px-3 px-md-4 flex-grow-1">
+            <div class="row g-3 mb-3">
+                <div class="col-12">
+                    <div class="jae-section-card">
+                        <div class="jae-section-header">
+                            <span class="jae-section-dot" style="background: #64748B;"></span>
+                            <h2>Officiels</h2>
                         </div>
+                        <div id="officials" class="list-group d-flex flex-row flex-wrap"></div>
                     </div>
-                    {% endfor %}
                 </div>
             </div>
-        </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <div class="jae-section-card">
+                        <div class="jae-section-header">
+                            <span class="jae-section-dot" style="background: #1B4965;"></span>
+                            <h2 id="team1Title" contenteditable="true">Equipe 1</h2>
+                        </div>
+                        <div id="team1" class="list-group d-flex flex-row flex-wrap"></div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="jae-section-card">
+                        <div class="jae-section-header">
+                            <span class="jae-section-dot" style="background: #D95D24;"></span>
+                            <h2 id="team2Title" contenteditable="true">Equipe 2</h2>
+                        </div>
+                        <div id="team2" class="list-group d-flex flex-row flex-wrap"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-12">
+                    <div class="jae-section-card">
+                        <div class="jae-section-header">
+                            <span class="jae-section-dot" style="background: #94A3B8;"></span>
+                            <h2>Non-affecté</h2>
+                        </div>
+                        <div id="unassigned" class="list-group d-flex flex-row flex-wrap"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
     </div>
 
-    <footer class="footer mt-auto py-3 bg-light">
-        <div class="container text-center">
-            <span class="text-muted">Alexis MP - </span>
-            <a href="https://github.com/alexismp/jae-identites" target="_blank">GitHub</a>
-            <br>
-            <small class="text-muted" style="font-size: 0.7rem; opacity: 0.55; font-family: monospace;">{{ build_info.branch_name }}@{{ build_info.commit_hash }}</small>
+    <footer class="jae-footer text-center">
+        <div class="container">
+            <span class="text-muted">Alexis MP — </span>
+            <a href="https://github.com/alexismp/jae-identites" target="_blank" class="text-decoration-none">GitHub</a>
+            <span class="text-muted mx-2">·</span>
+            <small class="text-muted" style="font-size: 0.72rem; opacity: 0.65; font-family: monospace;">{{ build_info.branch_name }}@{{ build_info.commit_hash }}</small>
         </div>
     </footer>
 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>

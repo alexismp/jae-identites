@@ -99,7 +99,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (explicitSlot === 'team1' || explicitSlot === 'team2') {
             return explicitSlot;
         }
-        const rawClub = card.dataset.club || (card.querySelector('p:nth-child(6)')?.textContent.replace('Club:', '').trim() || '');
+        const rawClub = card.dataset.club || (card.querySelector('.card-club')?.textContent.replace('Club:', '').trim() || '');
         const clubNorm = normalizeClubText(rawClub);
         if (!clubNorm || clubNorm === 'null' || clubNorm === 'none') return null;
 
@@ -210,8 +210,26 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    document.addEventListener('click', function (evt) {
+        const copyBtn = evt.target && evt.target.closest('.btn-copy-licence');
+        if (!copyBtn) return;
+        evt.stopPropagation();
+        const val = (copyBtn.dataset.copy || '').trim();
+        if (!val) return;
+        navigator.clipboard.writeText(val).then(() => {
+            const orig = copyBtn.textContent;
+            copyBtn.textContent = '✓';
+            copyBtn.classList.add('copied');
+            setTimeout(() => {
+                copyBtn.textContent = orig;
+                copyBtn.classList.remove('copied');
+            }, 1400);
+        }).catch(err => console.error('Erreur copie licence:', err));
+    });
+
     new Sortable(officials, {
         group: 'shared',
+        handle: '.drag-handle',
         animation: 150,
         onMove: handleSortableMove,
         onStart: function () { isDragging = true; },
@@ -220,6 +238,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     new Sortable(team1, {
         group: 'shared',
+        handle: '.drag-handle',
         animation: 150,
         onMove: handleSortableMove,
         onStart: function () { isDragging = true; },
@@ -232,7 +251,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
             if (!team1LockedByTenup && to.children.length === 1 && team1Title && team1Title.textContent.trim() === 'Equipe 1') {
-                var clubElement = item.querySelector('p:nth-child(6)');
+                var clubElement = item.querySelector('.card-club');
                 if (clubElement) {
                     var clubName = clubElement.textContent.replace('Club:', '').trim();
                     if (clubName && clubName !== 'null' && clubName !== 'None') {
@@ -247,6 +266,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     new Sortable(team2, {
         group: 'shared',
+        handle: '.drag-handle',
         animation: 150,
         onMove: handleSortableMove,
         onStart: function () { isDragging = true; },
@@ -259,7 +279,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
             if (!team2LockedByTenup && to.children.length === 1 && team2Title && team2Title.textContent.trim() === 'Equipe 2') {
-                var clubElement = item.querySelector('p:nth-child(6)');
+                var clubElement = item.querySelector('.card-club');
                 if (clubElement) {
                     var clubName = clubElement.textContent.replace('Club:', '').trim();
                     if (clubName && clubName !== 'null' && clubName !== 'None') {
@@ -274,6 +294,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     new Sortable(unassigned, {
         group: 'shared',
+        handle: '.drag-handle',
         animation: 150,
         onMove: handleSortableMove,
         onStart: function () { isDragging = true; },
@@ -388,13 +409,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function getSectionData(sectionElement) {
         return Array.from(sectionElement.children).map(function (item) {
-            const nomEl = item.querySelector('p:nth-child(1)');
-            const prenomEl = item.querySelector('p:nth-child(2)');
-            const classementEl = item.querySelector('p:nth-child(3)');
-            const licenceEl = item.querySelector('.card-detail:nth-of-type(1)');
-            const anneeValiditeEl = item.querySelector('.card-detail:nth-of-type(2)');
-            const clubEl = item.querySelector('.card-detail:nth-of-type(3)');
-            const statutEl = item.querySelector('.card-detail:nth-of-type(4)');
+            const nomEl = item.querySelector('.card-nom') || item.querySelector('p:nth-of-type(1)');
+            const prenomEl = item.querySelector('.card-prenom') || item.querySelector('p:nth-of-type(2)');
+            const classementEl = item.querySelector('.card-classement') || item.querySelector('p:nth-of-type(3)');
+            const licenceValEl = item.querySelector('.card-licence-val');
+            const anneeValiditeEl = item.querySelector('.card-annee');
+            const clubEl = item.querySelector('.card-club');
+            const statutEl = item.querySelector('.card-statut');
             const idCheckedEl = item.querySelector('input[type="checkbox"]');
             const imageUriEl = item.querySelector('a');
 
@@ -403,7 +424,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 nom: nomEl ? nomEl.textContent.replace('Nom:', '').trim() : '',
                 prenom: prenomEl ? prenomEl.textContent.replace('Prénom:', '').trim() : '',
                 classement: classementEl ? classementEl.textContent.replace('Classement:', '').trim() : '',
-                licence: licenceEl ? licenceEl.textContent.replace('Licence:', '').trim() : '',
+                licence: licenceValEl ? licenceValEl.textContent.trim() : (item.dataset.id || ''),
                 annee_validite: anneeValiditeEl ? anneeValiditeEl.textContent.replace('Année validité:', '').trim() : '',
                 club: clubEl ? clubEl.textContent.replace('Club:', '').trim() : '',
                 statut: statutEl ? statutEl.textContent.replace('Statut:', '').trim() : '',
@@ -420,14 +441,20 @@ document.addEventListener('DOMContentLoaded', function () {
         card.dataset.expectedSlot = participant.expected_team_slot || '';
         card.dataset.club = participant.club || '';
 
+        const licenceDisplay = participant.licence || '';
+        const escapedLicence = String(licenceDisplay).replace(/"/g, '&quot;');
+
         card.innerHTML = `
-            <p><strong>Nom:</strong> ${participant.image_uri ? `<a href="${participant.image_uri}" target="_blank">${participant.nom}</a>` : participant.nom}</p>
-            <p><strong>Prénom:</strong> ${participant.prenom}</p>
-            <p><strong>Classement:</strong> ${participant.classement}</p>
-            <p class="card-detail"><strong>Licence:</strong> ${participant.licence}</p>
-            <p class="card-detail"><strong>Année validité:</strong> ${participant.annee_validite}</p>
-            <p class="card-detail"><strong>Club:</strong> ${participant.club}</p>
-            <p class="card-detail"><strong>Statut:</strong> ${participant.statut}</p>
+            <div class="drag-handle" title="Glisser pour déplacer la fiche">
+                <span>⋮⋮ Déplacer</span>
+            </div>
+            <p class="card-nom"><strong>Nom:</strong> ${participant.image_uri ? `<a href="${participant.image_uri}" target="_blank">${participant.nom}</a>` : participant.nom}</p>
+            <p class="card-prenom"><strong>Prénom:</strong> ${participant.prenom}</p>
+            <p class="card-classement"><strong>Classement:</strong> ${participant.classement}</p>
+            <p class="card-detail"><strong>Licence:</strong> <span class="card-licence-val">${licenceDisplay}</span>${licenceDisplay ? `<button type="button" class="btn-copy-licence" data-copy="${escapedLicence}" title="Copier le numéro de licence">📋</button>` : ''}</p>
+            <p class="card-detail card-annee"><strong>Année validité:</strong> ${participant.annee_validite}</p>
+            <p class="card-detail card-club"><strong>Club:</strong> ${participant.club}</p>
+            <p class="card-detail card-statut"><strong>Statut:</strong> ${participant.statut}</p>
             <div class="form-check card-detail">
                 <input class="form-check-input" type="checkbox" ${participant.id_checked ? 'checked' : ''}>
                 <label class="form-check-label">Pièce d'identité</label>
@@ -717,8 +744,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 const targetCol = slot === 'team1' ? team1 : team2;
                 const targetName = slot === 'team1' ? team1Title.textContent.trim() : team2Title.textContent.trim();
                 targetCol.appendChild(candidate);
-                const nom = candidate.querySelector('p:nth-child(1)')?.textContent.replace('Nom:', '').trim() || '';
-                const prenom = candidate.querySelector('p:nth-child(2)')?.textContent.replace('Prénom:', '').trim() || '';
+                const nom = candidate.querySelector('.card-nom')?.textContent.replace('Nom:', '').trim() || '';
+                const prenom = candidate.querySelector('.card-prenom')?.textContent.replace('Prénom:', '').trim() || '';
                 showDemoToast(`✓ CNI lue localement par MRZ (0,2 s · sans LLM · 0 photo envoyée) : ${prenom} ${nom} → validée et placée dans ${targetName}.`, 'alert-success');
             });
         }
@@ -775,7 +802,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const boardContainer = document.getElementById('boardContainer');
         const userBadge = document.getElementById('userBadge');
         const signOutBtn = document.getElementById('signOutBtn');
-        const adminLinkBtn = document.getElementById('adminLinkBtn');
+        const adminMenuDivider = document.getElementById('adminMenuDivider');
+        const adminMenuItem = document.getElementById('adminMenuItem');
         const authError = document.getElementById('authError');
 
         function showAuthError(msg) {
@@ -814,7 +842,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (boardContainer) boardContainer.classList.add('d-none');
                 if (userBadge) userBadge.textContent = 'Non connecté';
                 if (signOutBtn) signOutBtn.classList.add('d-none');
-                if (adminLinkBtn) adminLinkBtn.classList.add('d-none');
+                if (adminMenuDivider) adminMenuDivider.classList.add('d-none');
+                if (adminMenuItem) adminMenuItem.classList.add('d-none');
                 return;
             }
 
@@ -832,9 +861,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 if (pendingApprovalBox) pendingApprovalBox.classList.add('d-none');
                 if (boardContainer) boardContainer.classList.remove('d-none');
-                if (me && me.user && me.user.isAdmin && adminLinkBtn) {
-                    adminLinkBtn.classList.remove('d-none');
-                }
+                const isAdmin = Boolean(me && me.user && me.user.isAdmin);
+                if (adminMenuDivider) adminMenuDivider.classList.toggle('d-none', !isAdmin);
+                if (adminMenuItem) adminMenuItem.classList.toggle('d-none', !isAdmin);
                 const resolvedMatchId = currentMatchId || (me && me.activeMatch && me.activeMatch.matchId);
                 if (resolvedMatchId) {
                     setActiveMatchInUrl(resolvedMatchId, false);
