@@ -1,12 +1,40 @@
 importScripts("parser.js");
 
 const DEFAULT_OCR_URL = "https://jae-ocr-2500276981.europe-west1.run.app";
+const FIREBASE_API_KEY = "AIzaSyDQ2viUbTqy-lwz_EUf_YLrYiWfTOkRPPw";
 
-async function setStatus(text, kind = "", busy = false) {
+async function setStatus(text, kind = "", busy = false, matchId = null) {
   console.log("[JAE Ten'Up]", kind || "info", text);
   await chrome.storage.local.set({
-    lastStatus: { text, kind, busy, updatedAt: Date.now() }
+    lastStatus: { text, kind, busy, matchId, updatedAt: Date.now() }
   });
+}
+
+async function getValidFirebaseToken() {
+  const { fbAuth } = await chrome.storage.local.get(["fbAuth"]);
+  if (!fbAuth || !fbAuth.refreshToken) {
+    throw new Error("Connecte-toi d'abord dans la popup de l'extension.");
+  }
+  if (fbAuth.idToken && fbAuth.expiresAt && Date.now() < fbAuth.expiresAt) {
+    return fbAuth.idToken;
+  }
+  const resp = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FIREBASE_API_KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(fbAuth.refreshToken)}`
+  });
+  if (!resp.ok) {
+    throw new Error("Session expirée : reconnecte-toi dans la popup.");
+  }
+  const data = await resp.json();
+  const updated = {
+    email: fbAuth.email,
+    idToken: data.id_token,
+    refreshToken: data.refresh_token || fbAuth.refreshToken,
+    expiresAt: Date.now() + Math.max(60, parseInt(data.expires_in || "3600", 10) - 120) * 1000
+  };
+  await chrome.storage.local.set({ fbAuth: updated });
+  return updated.idToken;
 }
 
 function sleep(ms) {
@@ -213,9 +241,16 @@ async function findTeamLinksOnMatchPage(tabId) {
   return result || [];
 }
 
-async function runExtraction(ocrUrl) {
-  await setStatus("Recherche des 2 équipes sur la page Ten'Up...", "", true);
+async function runExtraction(ocrUrl, newMatch = false) {
+  await setStatus("Vérification de la session JAE...", "", true);
   try {
+    const idToken = await getValidFirebaseToken();
+    const authFetch = (url, opts = {}) => {
+      const headers = Object.assign({}, opts.headers || {}, { Authorization: `Bearer ${idToken}` });
+      return fetch(url, Object.assign({}, opts, { headers }));
+    };
+
+    await setStatus("Recherche des 2 équipes sur la page Ten'Up...", "", true);
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!activeTab || !activeTab.url || !activeTab.url.includes("tenup.fft.fr")) {
       await setStatus("Ouvre d'abord une page de rencontre sur tenup.fft.fr.", "err", false);
@@ -229,14 +264,17 @@ async function runExtraction(ocrUrl) {
       const direct = await readTeamDomInTab(activeTab.id);
       if (direct.ready && direct.players.length > 0) {
         await setStatus(`Section L'équipe lue (${direct.players.length} joueurs). Envoi...`, "", true);
-        await self.JaeTenupParser.postRosterSafe(fetch, ocrUrl, {
+        const saved = await self.JaeTenupParser.postRosterSafe(authFetch, ocrUrl, {
+          newMatch,
           tenupUrl: activeTab.url,
           team1Name: direct.teamName,
           team1Players: direct.players,
           team2Name: "",
           team2Players: []
         });
-        await setStatus(`Importé : ${direct.teamName || "Équipe 1"} (${direct.players.length} joueurs).`, "ok", false);
+        const matchId = saved && saved.matchId ? saved.matchId : null;
+        await setStatus(`Importé : ${direct.teamName || "Équipe 1"} (${direct.players.length} joueurs).`, "ok", false, matchId);
+        await chrome.tabs.create({ url: matchId ? `${ocrUrl}/m/${encodeURIComponent(matchId)}` : ocrUrl, active: true });
         return;
       }
       await setStatus("Aucun lien d'équipe trouvé sur cette page Ten'Up.", "err", false);
@@ -253,6 +291,7 @@ async function runExtraction(ocrUrl) {
     }
 
     const payload = {
+      newMatch,
       tenupUrl: activeTab.url,
       team1Name: t1.teamName || teamLinks[0]?.label || "Équipe 1",
       team1Players: t1.players || [],
@@ -261,23 +300,63 @@ async function runExtraction(ocrUrl) {
     };
 
     await setStatus("Envoi des compositions vers JAE-OCR (sans LLM)...", "", true);
-    await self.JaeTenupParser.postRosterSafe(fetch, ocrUrl, payload);
+    const saved = await self.JaeTenupParser.postRosterSafe(authFetch, ocrUrl, payload);
+    const matchId = saved && saved.matchId ? saved.matchId : null;
 
     await setStatus(
       `Import réussi !\n${payload.team1Name} : ${payload.team1Players.length} joueur(s)\n${payload.team2Name} : ${payload.team2Players.length} joueur(s)`,
       "ok",
-      false
+      false,
+      matchId
     );
-    await chrome.tabs.create({ url: ocrUrl, active: true });
+    await chrome.tabs.create({ url: matchId ? `${ocrUrl}/m/${encodeURIComponent(matchId)}` : ocrUrl, active: true });
   } catch (err) {
     await setStatus(`Erreur : ${err.message}`, "err", false);
+  }
+}
+
+async function runOAuthFlow(ocrUrl) {
+  const tab = await chrome.tabs.create({ url: `${ocrUrl}/ext-auth`, active: true });
+  for (let i = 0; i < 90; i++) {
+    await sleep(1000);
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
+          const el = document.getElementById("jaeExtAuthPayload");
+          return el ? el.textContent : null;
+        }
+      });
+      if (result) {
+        const parsed = JSON.parse(result);
+        if (parsed && parsed.idToken && parsed.refreshToken) {
+          await chrome.storage.local.set({
+            fbAuth: {
+              email: parsed.email || "",
+              idToken: parsed.idToken,
+              refreshToken: parsed.refreshToken,
+              expiresAt: Date.now() + 50 * 60 * 1000
+            }
+          });
+          await setStatus(`Connecté via OAuth (${parsed.email}) !`, "ok", false);
+          try { await chrome.tabs.remove(tab.id); } catch (_) {}
+          return;
+        }
+      }
+    } catch (_) {
+      // Onglet fermé ou navigation OAuth en cours
+    }
   }
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message && message.action === "EXTRACT_TENUP") {
     const ocrUrl = (message.ocrUrl || DEFAULT_OCR_URL).trim().replace(/\/+$/, "");
-    runExtraction(ocrUrl);
+    runExtraction(ocrUrl, Boolean(message.newMatch));
+    sendResponse({ started: true });
+  } else if (message && message.action === "START_OAUTH") {
+    const ocrUrl = (message.ocrUrl || DEFAULT_OCR_URL).trim().replace(/\/+$/, "");
+    runOAuthFlow(ocrUrl);
     sendResponse({ started: true });
   }
   return false;
