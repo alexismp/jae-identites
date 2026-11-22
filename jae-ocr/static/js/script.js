@@ -483,6 +483,7 @@ document.addEventListener('DOMContentLoaded', function () {
         card.dataset.id = participant.licence;
         card.dataset.expectedSlot = participant.expected_team_slot || '';
         card.dataset.club = participant.club || '';
+        card.dataset.serverIdChecked = participant.id_checked ? 'true' : 'false';
 
         const licenceDisplay = participant.licence || '';
         const escapedLicence = String(licenceDisplay).replace(/"/g, '&quot;');
@@ -617,9 +618,12 @@ document.addEventListener('DOMContentLoaded', function () {
                             existingCard.dataset.club = participant.club;
                         }
                         // Mettre à jour la case Pièce d'identité et basculer dans la bonne équipe dès validation PID
+                        if (participant.id_checked) {
+                            existingCard.dataset.serverIdChecked = 'true';
+                        }
                         var checkbox = existingCard.querySelector('input[type="checkbox"]');
-                        if (checkbox && participant.id_checked !== checkbox.checked) {
-                            checkbox.checked = participant.id_checked;
+                        if (checkbox && participant.id_checked && !checkbox.checked) {
+                            checkbox.checked = true;
                         }
                         if (participant.id_checked && participant.team_slot && existingCard.parentElement === unassigned) {
                             if (participant.team_slot === 'team1') {
@@ -698,7 +702,12 @@ document.addEventListener('DOMContentLoaded', function () {
         Object.entries(checkedMap).forEach(([cardId, isChecked]) => {
             const card = Array.from(document.querySelectorAll('.participant-card')).find(c => c.dataset.id === cardId);
             const cb = card ? card.querySelector('input[type="checkbox"]') : null;
-            if (cb && cb.checked !== Boolean(isChecked)) {
+            if (!cb) return;
+            // Ne jamais écraser à false une pièce d'identité validée par le serveur (scan MRZ / Gemini)
+            if (!isChecked && card.dataset.serverIdChecked === 'true') {
+                return;
+            }
+            if (cb.checked !== Boolean(isChecked)) {
                 cb.checked = Boolean(isChecked);
             }
         });
