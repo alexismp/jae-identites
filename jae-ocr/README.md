@@ -1,61 +1,56 @@
-# JAE OCR
+# JAE OCR (Tableau de bord & serveur de reconnaissance)
 
-Service backend (Cloud Run) qui effectue la reconnaissance visuelle de documents d'identité et de licences FFT via Gemini (`gemini-4-hydrogen`), expose le tableau web de suivi de rencontre et fournit un endpoint de Signed URL GCS pour l'upload direct depuis l'application Android.
+Tableau de bord web de gestion de la rencontre par équipes et service backend recevant les validations d'identité (locales ou de secours).
 
-## Documents pris en charge
+## Fonctionnalités (pour les utilisateurs)
 
-- **Pièces d'identité** : CNI française ancien format (ID-2 / MRZ TD2), CNI française nouveau format (ID-1), passeports français et étrangers (translittération latine, croisement VIZ + MRZ, `nom_usage`, prénoms multiples).
-- **Licences FFT** : attestation de licence complète (`attestation_fft`) et capture/photo d'écran Ten'Up (`tenup_ecran`, gestion des champs manquants à `null` et normalisation des saisons `2025/2026` → `2026`).
+- **Tableau de rencontre clair en 4 zones** : **Officiels**, **Équipe 1**, **Équipe 2** et **Non-affecté**, avec vue complète ou condensée.
+- **Validation et placement automatiques** : les joueurs importés de Ten'Up attendent dans *Non-affecté* ; dès que leur pièce d'identité (CNI ou passeport) est scannée, la case *Pièce d'identité* se coche et leur fiche bascule automatiquement dans la colonne de leur équipe.
+- **Protection contre les erreurs** : les noms de clubs importés de Ten'Up sont verrouillés (ils ne sont plus écrasés par un glisser-déposer) et il est impossible de déposer une joueuse ou un joueur dans la colonne de l'équipe adverse.
+- **Contrôle réglementaire strict** : seuls les **CNI et passeports** sont acceptés (permis de conduire et titres de séjour refusés) ; une pièce d'identité seule sans licence ni présence dans la liste Ten'Up (ex. officiel) attend sa licence avant de créer une fiche.
+- **Synchronisation multi-écrans** : chaque glisser-déposer, titre ou lien Ten'Up est partagé automatiquement entre tous les ordinateurs/tablettes connectés.
+- **Gestion de rencontre** : lien cliquable vers la feuille Ten'Up, **Exporter / Importer une rencontre** (JSON), **Nouvelle rencontre** (archivage propre) et **Mode Debug** (`?debug=true`) isolé pour les essais.
 
-## Endpoints
+---
 
-- `POST /` : réception des événements Eventarc GCS (`object.v1.finalized`), verrou atomique `.LOCK` (`if_generation_match=0`), analyse `gemini-4-hydrogen` en JSON strict (`response_mime_type="application/json"`), sauvegarde dans `jae-scan-results`.
-- `GET /` : interface web de gestion de la rencontre (glisser-déposer Officiels / Équipe 1 / Équipe 2 / Non-affectés).
-- `GET /api/participants` : liste JSON des participants (y compris les licences Ten'Up incomplètes avec `licence_incomplete: true`) avec rapprochement Unicode (`nom`, `nom_usage`, prénoms multiples) contre les fichiers `PID_*.json`.
-- `POST /api/upload-url` : génère une **GCS Signed URL v4** (valable 5 min) vers `jae-scan-bucket` pour permettre l'upload direct depuis Android sans passer par `jae-scanner`. Protégé par `SCANNER_API_KEY` si définie.
+## Détails techniques
 
-## Variables d'environnement
+### Endpoints principaux (`backend/app.py`)
+
+- `POST /api/identite/direct` : **circuit court sans LLM ni photo** — reçoit `{ nom, prenom, ... }` extraits par MRZ valide sur Android, écrit `PID_<prenom>_<nom>_<uuid8>.json` dans `jae-scan-results` et retourne `matched: true/false`.
+- `GET/POST /api/tenup/roster` : lit/enregistre `ROSTER_CURRENT.json` envoyé par l'extension Chrome (sans LLM).
+- `POST /` : **fallback OCR serveur** déclenché par Eventarc GCS (`object.v1.finalized`) — ignore les événements antérieurs à `MATCH_RESET_AT.json` et les fichiers déjà `STATUS == done`, acquiert un verrou atomique `.LOCK` (`if_generation_match=0`), appelle **Vertex AI (`gemini-4-hydrogen`)** en JSON strict (`backend/prompt.txt`) avec retries `429`/`503`, refuse `non_autorise` (`permis_conduire`/`titre_sejour`).
+- `GET /` & `GET /api/participants` : tableau web + API participants avec rapprochement Unicode (`nom`, `nom_usage`, prénoms multiples, inversions).
+- `GET/POST /api/board-state` : persistance et synchronisation multi-machines (`BOARD_STATE.json`).
+- `POST /api/upload-url` & `GET /api/scan-status/<object_name>` : Signed URL v4 GCS (5 min) et suivi asynchrone pour le fallback photo Android.
+- `POST /api/reset-match` : archive les fichiers actifs sous `archive/<timestamp>/` et met à jour `MATCH_RESET_AT.json`.
+
+### Variables d'environnement
 
 | Variable | Défaut | Description |
 | :--- | :--- | :--- |
-| `GOOGLE_API_KEY` | *(requis)* | Clé API Gemini (lue depuis `.env`, ne jamais commiter) |
-| `GEMINI_MODEL` | `gemini-4-hydrogen` | Modèle Gemini utilisé pour l'OCR |
-| `SCAN_BUCKET_NAME` | `jae-scan-bucket` | Bucket GCS source des images |
-| `RESULTS_BUCKET_NAME` | `jae-scan-results` | Bucket GCS des résultats JSON et verrous `.LOCK` |
-| `SCANNER_API_KEY` | *(optionnel)* | Clé API partagée (`X-API-Key` / `Bearer`) pour `POST /api/upload-url` |
+| `GCP_PROJECT` | `alexismp-runner` | Projet GCP pour Vertex AI (`google-genai`, auth par compte de service IAM) |
+| `VERTEX_LOCATION` | `global` | Région Vertex AI pour `gemini-4-hydrogen` |
+| `GEMINI_MODEL` | `gemini-4-hydrogen` | Modèle Gemini utilisé en fallback OCR |
+| `SCAN_BUCKET_NAME` | `jae-scan-bucket` | Bucket GCS des photos de secours |
+| `RESULTS_BUCKET_NAME` | `jae-scan-results` | Bucket GCS des JSON, rosters, état du tableau et archives |
+| `SCANNER_API_KEY` | *(optionnel)* | Clé API partagée (`X-API-Key` / `Bearer`) pour les endpoints d'écriture |
 
-## Déploiement sur Cloud Run
+### Déploiement sur Cloud Run & rôles IAM
 
 ```bash
-# 1. Construire l'image (Apple Silicon -> linux/amd64 pour Cloud Run)
 podman build --platform linux/amd64 \
   -t europe-west1-docker.pkg.dev/alexismp-runner/jae-identites/jae-ocr:latest \
   ./jae-ocr
 
-# 2. Pousser vers Artifact Registry
 podman push europe-west1-docker.pkg.dev/alexismp-runner/jae-identites/jae-ocr:latest
 
-# 3. Déployer sur Cloud Run (avec GOOGLE_API_KEY lue depuis .env)
 gcloud run deploy jae-ocr \
   --project alexismp-runner \
   --image europe-west1-docker.pkg.dev/alexismp-runner/jae-identites/jae-ocr:latest \
   --region europe-west1 \
   --allow-unauthenticated \
-  --set-env-vars="GOOGLE_API_KEY=<VALEUR_DEPUIS_.ENV>"
+  --set-env-vars="GCP_PROJECT=alexismp-runner,VERTEX_LOCATION=global"
 ```
 
-## Déclencheur Eventarc & permissions IAM
-
-```bash
-gcloud eventarc triggers create jae-ocr-trigger \
-  --location=eu \
-  --destination-run-service=jae-ocr \
-  --destination-run-region=europe-west1 \
-  --event-filters="type=google.cloud.storage.object.v1.finalized" \
-  --event-filters="bucket=jae-scan-bucket" \
-  --service-account="2500276981-compute@developer.gserviceaccount.com"
-```
-
-Rôles requis sur le compte de service Cloud Run :
-- `roles/storage.objectAdmin` (lecture `jae-scan-bucket`, écriture/suppression `jae-scan-results`)
-- `roles/iam.serviceAccountTokenCreator` (si utilisation de `POST /api/upload-url` pour signer les URLs GCS)
+Rôles IAM requis sur le compte de service Cloud Run : `roles/aiplatform.user`, `roles/storage.objectAdmin`, `roles/iam.serviceAccountTokenCreator`.

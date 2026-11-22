@@ -1,33 +1,48 @@
 # JAE Scanner Android
 
-Application Android native (Kotlin + Jetpack Compose + CameraX) destinée à remplacer l'application web `jae-scanner` pour la capture de pièces d'identité (CNI française ancien/nouveau format, passeports français et étrangers) et de licences FFT (attestations et écrans Ten'Up).
+Application mobile Android dédiée au contrôle rapide des pièces d'identité et des licences FFT au bord du court.
 
-## Fonctionnalités implémentées (`v0.2.0`)
+## Fonctionnalités (pour les utilisateurs)
 
-- **Double mode de cadrage** (`ui/ScannerScreen.kt`) :
-  - **Identité** : cadre paysage **ID-1 (`1.586`)** + repère pointillé **ID-2 / biopage passeport (`1.42`)**, contrôle **Torche / Flash auto / Off**, tap-to-focus (`FocusMeteringAction`).
-  - **Licence / Ten'Up** : cadre **portrait**, coupure automatique du flash/torche et légère sous-exposition (`EV -2`) pour éviter les reflets et écrans cramés.
-- **Analyse qualité temps réel on-device** (`quality/ImageQualityAnalyzer.kt`) : détection locale du flou (Laplacien), des reflets et du contraste sur le canal luminance YUV, avec seuils adaptés au mode (pas de faux positifs sur fond blanc Ten'Up).
-- **Validation post-capture on-device** (`quality/MrzParser.kt`, `quality/PostCaptureValidator.kt`) :
-  - **Parser MRZ ICAO 9303** pur Kotlin (**TD1** CNIe verso, **TD2** CNI ancienne, **TD3** passeports FR & étrangers) avec vérification des **check digits** (modulo 10, poids 7-3-1) via ML Kit Text Recognition.
-  - **Détection licence FFT** (`\d{7}[A-Z]` + mots-clés FFT/Ten'Up) pour alerter immédiatement si le joueur n'est pas sur le bon onglet.
-  - Point d'extension `GeminiNanoPostCaptureValidator` prêt pour **Gemini Nano (Android AICore / ML Kit GenAI)**.
-- **Upload résilient** (`network/ScanUploader.kt`) :
-  - Priorité à l'**upload direct GCS** via `POST /api/upload-url` sur `jae-ocr` (Signed URL v4) avec support `X-API-Key`.
-  - **Fallback automatique** vers `POST /scan` sur `jae-scanner`.
-- **Tests unitaires** (`app/src/test/java/com/jae/scanner/quality/MrzParserTest.kt`) : couverture TD1, TD2, TD3 et détection licence Ten'Up.
+- **Scan instantané sans envoi de photo** : pour les cartes d'identité (ancien ou nouveau format verso) et les passeports lisibles localement, la vérification se fait directement sur le téléphone en **moins d'une seconde** — aucune photo n'est envoyée sur le serveur.
+- **Aucune sélection manuelle de mode** : l'application reconnaît automatiquement s'il s'agit d'une pièce d'identité ou d'une attestation de licence FFT / écran Ten'Up.
+- **Refus immédiat des pièces non autorisées** : seuls les **CNI et passeports** sont acceptés ; les permis de conduire et titres/cartes de séjour sont rejetés immédiatement à l'écran.
+- **Enchaînement rapide des scans** : la prise de vue libère immédiatement le bouton pour scanner plusieurs joueurs à la suite sans attendre le réseau.
+- **Aide au cadrage et à l'éclairage** : cadre visuel qui passe au vert quand l'image est nette, contrôle **Torche / Flash auto / Off** et mise au point tactile.
+- **Historique des actions** : un appui sur le logo **JAE** en haut à gauche affiche le journal horodaté des dernières validations, envois et refus.
+- **Analyse de secours automatique** : si la bande MRZ est absente ou illisible (ex. recto seul de nouvelle CNIe, licence FFT), l'application compresse automatiquement la photo et l'envoie au serveur pour reconnaissance.
 
-## Ouvrir et lancer dans Android Studio
+---
 
-Ce module fait partie intégrante du dépôt `jae-identites` (au même titre que `jae-scanner` et `jae-ocr`).
+## Détails techniques
 
-1. Dans **Android Studio**, ouvre directement le sous-répertoire `jae-identites/jae-scanner-android` (File → Open).
-2. Laisse Gradle synchroniser les dépendances (le wrapper Gradle peut être généré via Android Studio ou `gradle wrapper`).
-3. Lance l'application sur un appareil Android physique (API 26+) pour tester la torche, le flash, le double mode Identité / Ten'Up et le parser MRZ.
+### Pipeline de traitement on-device (`Kotlin`, `Jetpack Compose`, `CameraX`, `ML Kit`)
 
-## Configuration (`local.properties`)
+1. **Qualité temps réel** (`quality/ImageQualityAnalyzer.kt`) : détection locale du flou (Laplacien), des reflets et du contraste sur la luminance YUV.
+2. **Rejet local & classification** (`quality/PostCaptureValidator.kt`) :
+   - Rejet immédiat sur mots-clés de permis de conduire / titre ou carte de séjour.
+   - Parser **MRZ ICAO 9303** pur Kotlin (`quality/MrzParser.kt` : **TD1** CNIe verso, **TD2** CNI ancienne, **TD3** passeports FR & étrangers) avec vérification des clés de contrôle (modulo 10, poids 7-3-1).
+3. **Circuit court sans LLM** (`network/ScanUploader.kt`) :
+   - Si MRZ valide (`checkDigitsValid == true` + nom/prénom non vides) → `POST /api/identite/direct` (~200 octets JSON, zéro image, zéro appel LLM).
+4. **Fallback photo compressée + OCR serveur** :
+   - Redimensionnement local **1600 px max**, qualité JPEG 82 (~250 Ko).
+   - Upload prioritaire via **GCS Signed URL v4** (`POST /api/upload-url` sur `jae-ocr`), fallback `POST /scan` sur `jae-scanner`, timeouts `write`/`read` 60 s.
+   - Suivi asynchrone jusqu'à 80 s (`GET /api/scan-status/<fichier>`) avec alerte explicite en cas d'erreur ou de dépassement de délai.
+5. **Icône adaptative** : `res/mipmap-anydpi-v26/ic_launcher.xml` (`ic_launcher_background.xml` + `ic_launcher_foreground.xml`).
 
-Les URLs Cloud Run de production sont préconfigurées par défaut dans `app/build.gradle.kts`. Pour les surcharger ou activer une clé API partagée :
+### Compiler, tester et installer (CLI, sans Android Studio)
+
+```bash
+cd jae-scanner-android
+JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew testDebugUnitTest assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+Tests unitaires (`app/src/test/java/com/jae/scanner/quality/MrzParserTest.kt`) : TD1, TD2, TD3, détection licence FFT/Ten'Up et rejet permis de conduire / titre de séjour.
+
+### Configuration (`local.properties`)
+
+Les URLs Cloud Run de production sont préconfigurées dans `app/build.gradle.kts`. Surcharge optionnelle :
 
 ```properties
 ocr.backend.url=https://jae-ocr-2500276981.europe-west1.run.app

@@ -1,28 +1,54 @@
-**Note importante :** Ce projet est un développement personnel et n'est en aucun cas affilié à la Fédération Française de Tennis (FFT). L'objectif de cet outil est uniquement de proposer une solution pour la phase de vérification des identités lors des rencontres par équipe.
+<p align="center">
+  <img src="jae-ocr/static/img/logo.svg" alt="JAE Identités" width="96" height="96">
+</p>
 
-# JAE Identités
+<h1 align="center">JAE Identités</h1>
 
-Suite d'outils permettant aux Juges-Arbitres par Équipe (JAE) de scanner et vérifier rapidement les pièces d'identité (CNI française ancien/nouveau format, passeports français et étrangers) et les licences FFT (attestations de licence et captures d'écran Ten'Up) lors d'une rencontre par équipe.
+<p align="center">
+  <strong>Préparation de rencontre et vérification rapide des identités pour les Juges-Arbitres par Équipe (JAE).</strong>
+</p>
 
-## Modules
+> **Note importante :** Ce projet est un développement personnel et n'est en aucun cas affilié à la Fédération Française de Tennis (FFT). Il est uniquement conçu pour faciliter la phase de vérification des identités lors des rencontres par équipe.
 
-| Module | Rôle | Stack | Documentation |
-| :--- | :--- | :--- | :--- |
-| **`jae-scanner`** | Application web mobile pour capturer les documents via le navigateur et les envoyer vers Cloud Storage | Python, Flask, HTML/JS, Cloud Run | [jae-scanner/README.md](jae-scanner/README.md) |
-| **`jae-ocr`** | Backend OCR déclenché par Eventarc + tableau web de gestion de la rencontre + endpoint Signed URL | Python, Flask, Gemini (`gemini-4-hydrogen`), GCS, Cloud Run | [jae-ocr/README.md](jae-ocr/README.md) |
-| **`jae-scanner-android`** | Application Android native (module dédié dans ce dépôt) avec CameraX, flash/torche, double mode Identité/Ten'Up et analyse qualité on-device | Kotlin, Jetpack Compose, CameraX, ML Kit (+ Gemini Nano) | [jae-scanner-android/README.md](jae-scanner-android/README.md) |
+---
 
-## Flux de travail
+## Les différents scénarios d'utilisation
 
-1. Le JAE capture un document depuis **JAE Scanner** (web mobile) ou **JAE Scanner Android**.
-2. L'image JPEG est téléversée dans le bucket GCS `jae-scan-bucket` avec un nom unique horodaté + UUID (via `POST /scan` sur `jae-scanner` ou directement via Signed URL v4 fournie par `POST /api/upload-url` sur `jae-ocr`).
-3. Un déclencheur Eventarc (`google.cloud.storage.object.v1.finalized`) invoque **JAE OCR** sur Cloud Run.
-4. **JAE OCR** pose un verrou atomique `.LOCK` (`if_generation_match=0`), analyse l'image avec **Gemini (`gemini-4-hydrogen`)** en JSON strict (reconnaissance sémantique des CNI, passeports, attestations FFT et écrans Ten'Up) et enregistre le résultat dans `jae-scan-results` (`{LIC|PID|UNKNOWN}_<prenom>_<nom>_<uuid8>.json`).
-5. La page web de **JAE OCR** (`GET /` + polling `GET /api/participants`) affiche les fiches de participants (y compris les écrans Ten'Up incomplets avec `licence_incomplete: true`) et coche automatiquement `id_checked` via un rapprochement Unicode tolérant (`nom`, `nom_usage`, prénoms multiples, inversions).
+Selon la manière dont la rencontre est préparée (avec ou sans Ten'Up), **JAE Identités** s'adapte à trois usages courants le jour du match :
 
-## Gestion des doublons & concurrence
+### 1. Composition d'équipe complète importée depuis Ten'Up (cas le plus rapide)
+Lorsque la liste Ten'Up de chaque équipe contient tous les joueurs et joueuses susceptibles de disputer la rencontre :
+1. Depuis la page officielle de la rencontre sur Ten'Up, cliquez sur l'extension Chrome **JAE Ten'Up** : les noms des deux clubs sont renseignés et verrouillés, et toutes les fiches sont créées dans **Non-affecté**.
+2. Au bord du court, vous n'avez plus besoin de scanner les licences — scannez uniquement les **pièces d'identité** (CNI ou passeport).
+3. Dès qu'une pièce est validée, sa case *Pièce d'identité* se coche et la fiche bascule automatiquement dans la colonne de son équipe.
 
-- **Zéro collision de fichiers** : chaque image uploadée et chaque fichier résultat JSON inclut un identifiant UUID court (`8` caractères hexadécimaux), évitant tout écrasement lors de scans simultanés ou rapprochés.
-- **Déduplication dans l'interface** : si une même licence est scannée plusieurs fois, les deux fichiers JSON sont conservés dans `jae-scan-results`, mais `GET /api/participants` indexe par numéro de licence (ou `TEMP_<nom>_<prenom>` si la licence manque sur Ten'Up) afin de n'afficher qu'une fiche par joueur.
-- **Verrou `.LOCK` atomique** : l'acquisition du verrou côté GCS utilise la précondition `if_generation_match=0`, ce qui protège contre les doublons Eventarc et les accès concurrents multi-threads (`gunicorn --threads 8`).
-- **Sécurité optionnelle** : les endpoints d'upload (`POST /scan` et `POST /api/upload-url`) peuvent être protégés par la variable d'environnement `SCANNER_API_KEY` (`X-API-Key` ou `Authorization: Bearer`).
+### 2. Mode mixte : équipe importée depuis Ten'Up + remplaçant(e) hors liste ou officiel
+En championnat par équipes (par exemple des équipes de 4 joueurs/joueuses), il arrive qu'un nouveau joueur ou une nouvelle joueuse **absent(e) de la liste initiale** vienne compléter l'équipe (avec un classement moindre), ou qu'il faille contrôler un **officiel** :
+1. Importez normalement la rencontre depuis Ten'Up pour pré-remplir les titulaires connus.
+2. Pour toute personne absente de la liste (remplaçant(e) ou officiel), scannez **son attestation de licence FFT** (papier ou écran Ten'Up) **ainsi que sa pièce d'identité** (une pièce d'identité seule sans licence ni présence dans la liste Ten'Up ne crée pas de fiche).
+3. Sa fiche apparaît dans **Non-affecté** avec sa case *Pièce d'identité* cochée automatiquement : il ne reste qu'à la glisser dans la colonne de son équipe ou dans **Officiels**.
+
+### 3. Mode autonome sans extension Chrome (scan des licences + pièces d'identité)
+Si vous ne souhaitez pas utiliser l'extension Chrome (ou sans accès à Ten'Up) :
+1. Scannez les **attestations de licence FFT** (ou écrans Ten'Up) et les **pièces d'identité** de chaque participant avec l'application Android ou le scanner web.
+2. Chaque licence crée une fiche dans **Non-affecté**, et chaque pièce d'identité coche automatiquement la case *Pièce d'identité* correspondante.
+3. Glissez les fiches dans **Équipe 1**, **Équipe 2** ou **Officiels** : la première fiche déposée dans une équipe renomme automatiquement la colonne avec le nom de son club.
+
+Dans tous les scénarios, le tableau de bord se synchronise en temps réel entre plusieurs écrans (ordinateur, tablette), empêche de déposer par erreur une personne dans la mauvaise équipe, et permet d'exporter/importer une rencontre ou d'en démarrer une nouvelle.
+
+## Règles de contrôle & confidentialité
+
+- **Pièces d'identité acceptées uniquement** : **Cartes Nationales d'Identité (CNI)** (ancien ou nouveau format, françaises ou étrangères) et **Passeports**. Les **permis de conduire** et **titres/cartes de séjour** sont automatiquement refusés.
+- **Analyse locale en priorité (sans envoi de photo)** : à chaque fois que c'est possible, la lecture se fait **directement sur votre appareil** (lecture locale des équipes dans Chrome, lecture locale de la bande MRZ des CNI et passeports sur Android). **Aucune photo n'est alors envoyée au serveur** et la validation s'effectue en moins d'une seconde.
+- **Analyse serveur de secours uniquement si besoin** : une photo compressée n'est envoyée au serveur que lorsque la lecture locale ne suffit pas (par exemple un recto seul de nouvelle CNI sans bande MRZ, une carte difficile à lire, ou une attestation de licence FFT scannée à la main).
+
+## Documentation technique par module
+
+Tous les détails techniques (architecture, endpoints, déploiement Cloud Run, compilation Android, tests) sont regroupés dans les quatre modules du projet :
+
+| Module | Rôle | Documentation technique |
+| :--- | :--- | :--- |
+| **Application Android (`jae-scanner-android`)** | Scan rapide au bord du court, lecture locale MRZ sans photo, rejet local permis/séjour, historique des actions | [jae-scanner-android/README.md](jae-scanner-android/README.md) |
+| **Extension Chrome (`jae-tenup-extension`)** | Import en 1 clic des deux équipes depuis Ten'Up directement dans le navigateur | [jae-tenup-extension/README.md](jae-tenup-extension/README.md) |
+| **Tableau de bord & OCR (`jae-ocr`)** | Interface web synchronisée multi-machines, validation directe et analyse de secours sur le cloud | [jae-ocr/README.md](jae-ocr/README.md) |
+| **Scanner Web mobile (`jae-scanner`)** | Scanner web de secours utilisable depuis n'importe quel navigateur mobile | [jae-scanner/README.md](jae-scanner/README.md) |

@@ -1,19 +1,29 @@
-# JAE Scanner (Web mobile)
+# JAE Scanner (Web mobile de secours)
 
-Application web mobile permettant de capturer un document (pièce d'identité ou licence FFT) depuis le navigateur d'un smartphone et de le téléverser dans le bucket Cloud Storage `jae-scan-bucket` pour traitement par `jae-ocr`.
+Application web mobile permettant de scanner une pièce d'identité ou une attestation de licence FFT depuis le navigateur de n'importe quel smartphone, sans avoir à installer l'application Android.
 
-> **Note :** Pour une expérience native avec contrôle du flash/torche et analyse de qualité on-device, voir [jae-scanner-android/README.md](../jae-scanner-android/README.md).
+## Fonctionnalités (pour les utilisateurs)
 
-## Fonctionnalités
+- **Aucune installation requise** : s'ouvre directement dans le navigateur mobile (iOS ou Android) pour dépanner un JAE ou un capitaine.
+- **Cadre optimisé pour le mode paysage** : la zone de capture occupe tout l'écran sans avoir à faire défiler la page (le logo **JAE Identités** reste discret en pied de page).
+- **Envoi direct vers le tableau de bord** : chaque photo capturée est transmise au serveur `jae-ocr` pour reconnaissance et mise à jour automatique du tableau de rencontre.
 
-- **Capture caméra navigateur** (`getUserMedia`, mode paysage, ratio carte ID-1 `1.586`, export JPEG haute qualité).
-- **Validation & upload fiable** (`POST /scan`) :
+> **Conseil :** Sur Android, privilégiez l'application native [JAE Scanner Android](../jae-scanner-android/README.md), qui lit les CNI et passeports localement **sans envoyer de photo ni appeler de LLM**, offre le contrôle de la torche et rejette immédiatement les pièces non autorisées.
+
+---
+
+## Détails techniques
+
+### Architecture (`Python`, `Flask`, `HTML/JS`, `Cloud Run`)
+
+- **Capture navigateur** (`static/js/script.js`, `backend/templates/index.html`) : `getUserMedia`, mode paysage, ratio carte ID-1 (`1.586`), export JPEG.
+- **Validation & upload fiable** (`POST /scan` dans `backend/app.py`) :
   - Validation Pillow de l'image reçue (`400` si vide ou corrompue).
   - Nom de fichier unique anti-collision : `YYYY-MM-DD_HH-MM-SS-<uuid8>-<nom_sûr>`.
-  - Remontée explicite d'erreur HTTP `502` si l'upload vers Cloud Storage échoue.
+  - Erreur HTTP `502` explicite si l'écriture dans Cloud Storage échoue.
   - Protection optionnelle par clé API partagée (`SCANNER_API_KEY` via `X-API-Key` ou `Bearer`).
 
-## Variables d'environnement
+### Variables d'environnement
 
 | Variable | Défaut | Description |
 | :--- | :--- | :--- |
@@ -21,18 +31,15 @@ Application web mobile permettant de capturer un document (pièce d'identité ou
 | `SCANNER_API_KEY` | *(optionnel)* | Clé API partagée requise sur `POST /scan` si définie |
 | `PORT` | `8080` | Port HTTP d'écoute (Gunicorn en conteneur, `5001` en local) |
 
-## Déploiement sur Cloud Run
+### Déploiement sur Cloud Run & développement local
 
 ```bash
-# 1. Construire l'image (Apple Silicon -> linux/amd64 pour Cloud Run)
 podman build --platform linux/amd64 \
   -t europe-west1-docker.pkg.dev/alexismp-runner/jae-identites/jae-scanner:latest \
   ./jae-scanner
 
-# 2. Pousser vers Artifact Registry
 podman push europe-west1-docker.pkg.dev/alexismp-runner/jae-identites/jae-scanner:latest
 
-# 3. Déployer sur Cloud Run
 gcloud run deploy jae-scanner \
   --project alexismp-runner \
   --image europe-west1-docker.pkg.dev/alexismp-runner/jae-identites/jae-scanner:latest \
@@ -40,10 +47,7 @@ gcloud run deploy jae-scanner \
   --allow-unauthenticated
 ```
 
-## Développement local
-
 ```bash
 cd jae-scanner/backend
-python3 app.py
-# Interface disponible sur http://localhost:5001
+python3 app.py   # http://localhost:5001
 ```
