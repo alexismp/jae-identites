@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import subprocess
+import time
 import unicodedata
 import uuid
 
@@ -169,6 +170,21 @@ def write_scan_status(bucket, file_name, payload):
         logging.warning(f"Impossible d'écrire le statut OCR pour {file_name} : {e}")
 
 
+def get_match_reset_at(bucket):
+    """Retourne l'horodatage UTC de la dernière réinitialisation de rencontre, ou None."""
+    try:
+        reset_blob = bucket.blob("MATCH_RESET_AT.json")
+        if not reset_blob.exists():
+            return None
+        data = json.loads(reset_blob.download_as_string())
+        raw_ts = data.get("reset_at")
+        if raw_ts:
+            return dt.datetime.fromisoformat(raw_ts)
+    except Exception as e:
+        logging.warning(f"Impossible de lire MATCH_RESET_AT.json : {e}")
+    return None
+
+
 def handle_storage_event(bucket_name, file_name):
     logging.info(f"Fichier {file_name} uploadé dans le bucket {bucket_name}.")
 
@@ -178,6 +194,28 @@ def handle_storage_event(bucket_name, file_name):
     lock_acquired = False
 
     try:
+        # Ignorer les retries Eventarc d'anciens scans antérieurs à la dernière « Nouvelle rencontre »
+        source_bucket = storage_client.bucket(bucket_name)
+        blob = source_bucket.blob(file_name)
+        blob.reload()
+        reset_at = get_match_reset_at(destination_bucket)
+        if reset_at and blob.time_created and blob.time_created < reset_at:
+            logging.info(
+                f"Ignoré (retry ancien antérieur à Nouvelle rencontre {reset_at.isoformat()}) : {file_name}"
+            )
+            return
+
+        # Ignorer les retries Eventarc si le fichier a déjà été traité avec succès
+        status_blob = destination_bucket.blob(f"STATUS_{file_name}.json")
+        if status_blob.exists():
+            try:
+                existing_status = json.loads(status_blob.download_as_string())
+                if existing_status.get("status") == "done":
+                    logging.info(f"Fichier déjà traité avec succès (STATUS done) : {file_name}. Retry Eventarc ignoré.")
+                    return
+            except Exception:
+                pass
+
         # Acquisition atomique du verrou (évite les race conditions multi-threads / retries Eventarc)
         try:
             lock_blob.upload_from_string("", if_generation_match=0)
@@ -190,8 +228,6 @@ def handle_storage_event(bucket_name, file_name):
         write_scan_status(destination_bucket, file_name, {"status": "processing"})
 
         # Télécharger l'image depuis le bucket source
-        source_bucket = storage_client.bucket(bucket_name)
-        blob = source_bucket.blob(file_name)
         img_bytes = blob.download_as_bytes()
         img = Image.open(io.BytesIO(img_bytes))
 
@@ -203,14 +239,29 @@ def handle_storage_event(bucket_name, file_name):
             prompt = f.read()
 
         logging.info(f"Sending request to Vertex AI ({GEMINI_MODEL_NAME} @ {GCP_PROJECT}/{VERTEX_LOCATION})...")
-        response = genai_client.models.generate_content(
-            model=GEMINI_MODEL_NAME,
-            contents=[img, prompt],
-            config=types.GenerateContentConfig(
-                temperature=0.2,
-                response_mime_type="application/json",
-            ),
-        )
+        response = None
+        last_err = None
+        for attempt in range(3):
+            try:
+                response = genai_client.models.generate_content(
+                    model=GEMINI_MODEL_NAME,
+                    contents=[img, prompt],
+                    config=types.GenerateContentConfig(
+                        temperature=0.2,
+                        response_mime_type="application/json",
+                    ),
+                )
+                break
+            except Exception as api_err:
+                last_err = api_err
+                err_str = str(api_err)
+                is_transient = ("429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "503" in err_str or "UNAVAILABLE" in err_str)
+                if is_transient and attempt < 2:
+                    wait_s = 4 * (attempt + 1)
+                    logging.warning(f"Erreur transitoire Vertex AI ({err_str[:120]}), nouvelle tentative dans {wait_s}s...")
+                    time.sleep(wait_s)
+                    continue
+                raise
         logging.info("Received response from Vertex AI.")
 
         response_text = (response.text or "").strip()
@@ -229,6 +280,13 @@ def handle_storage_event(bucket_name, file_name):
             first_name = slugify_filename_part(json_data.get("prenom"))
             last_name = slugify_filename_part(json_data.get("nom"))
             doc_type = (json_data.get("type") or "unknown").lower()
+            doc_subtype = (json_data.get("document_subtype") or "").lower()
+
+            if doc_type == "non_autorise" or doc_subtype in ("permis_conduire", "titre_sejour", "carte_sejour"):
+                msg = "Document non autorisé (permis de conduire ou titre de séjour). Seuls CNI et passeport sont acceptés."
+                logging.warning(f"Document refusé ({doc_subtype or doc_type}) pour {file_name}")
+                write_scan_status(destination_bucket, file_name, {"status": "error", "error": msg})
+                return
 
             if doc_type == "licence":
                 prefix = "LIC"
@@ -272,6 +330,9 @@ def handle_storage_event(bucket_name, file_name):
     except Exception as e:
         logging.error(f"Erreur lors du traitement de l'image {file_name} : {e}")
         write_scan_status(destination_bucket, file_name, {"status": "error", "error": str(e)})
+        err_str = str(e)
+        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "503" in err_str or "UNAVAILABLE" in err_str:
+            raise
     finally:
         if lock_acquired:
             try:
@@ -336,6 +397,57 @@ def get_participants_data():
             except Exception as e:
                 logging.error(f"Impossible de lire {blob.name}: {e}")
 
+    # 1. Pré-remplir les fiches des joueurs issus du roster Ten'Up (qui seront validés dès le scan de leur pièce d'identité)
+    try:
+        roster_blob = bucket.blob("ROSTER_CURRENT.json")
+        if roster_blob.exists():
+            roster_data = json.loads(roster_blob.download_as_string())
+            for team_key, name_key in (("team1Players", "team1Name"), ("team2Players", "team2Name")):
+                team_name = roster_data.get(name_key) or ""
+                for rp in roster_data.get(team_key) or []:
+                    r_nom = rp.get("nom") or ""
+                    r_prenom = rp.get("prenom") or ""
+                    if not r_nom and not r_prenom:
+                        continue
+                    # Ne pas écraser une fiche déjà créée par un scan de licence LIC_ pour ce joueur
+                    existing_key = next(
+                        (
+                            k
+                            for k, p in participants.items()
+                            if names_match(p.get("nom"), p.get("prenom"), {"nom": r_nom, "prenom": r_prenom})
+                        ),
+                        None,
+                    )
+                    if existing_key:
+                        if not participants[existing_key].get("classement") and rp.get("classement"):
+                            participants[existing_key]["classement"] = rp.get("classement")
+                        if not participants[existing_key].get("club") and team_name:
+                            participants[existing_key]["club"] = team_name
+                        continue
+
+                    roster_id = f"TENUP_{slugify_filename_part(r_nom)}_{slugify_filename_part(r_prenom)}"
+                    expected_slot = "team1" if team_key == "team1Players" else "team2"
+                    participants[roster_id] = {
+                        "nom": r_nom,
+                        "prenom": r_prenom,
+                        "licence": f"Ten'Up ({roster_id.replace('TENUP_', '')})",
+                        "licence_incomplete": False,
+                        "document_subtype": "tenup_roster",
+                        "expected_team_slot": expected_slot,
+                        "team_slot": None,
+                        "champs_manquants": [],
+                        "annee_validite": None,
+                        "classement": rp.get("classement") or None,
+                        "club": team_name or None,
+                        "statut": rp.get("statut") or None,
+                        "id_checked": False,
+                        "image_uri": None,
+                    }
+    except Exception as e:
+        logging.warning(f"Impossible de lire ROSTER_CURRENT.json : {e}")
+
+    # 2. Cocher id_checked sur toute fiche existante (LIC_ ou joueur Ten'Up).
+    # Un PID_ seul sans licence ni présence sur la liste Ten'Up (ex. officiel) ne crée pas de fiche : il faudra aussi sa licence.
     for blob_name, pid_data in pid_records:
         for participant in participants.values():
             if names_match(participant.get("nom"), participant.get("prenom"), pid_data):
@@ -344,6 +456,26 @@ def get_participants_data():
                 )
                 participant["id_checked"] = True
                 break
+
+    # 3. Propager expected_team_slot sur les fiches LIC_ qui correspondent au roster Ten'Up,
+    #    et n'affecter team_slot (Équipe 1 / Équipe 2) QUE lorsque id_checked est True !
+    try:
+        roster_blob = bucket.blob("ROSTER_CURRENT.json")
+        if roster_blob.exists():
+            roster_data = json.loads(roster_blob.download_as_string())
+            for team_key, slot in (("team1Players", "team1"), ("team2Players", "team2")):
+                for rp in roster_data.get(team_key) or []:
+                    for p in participants.values():
+                        if not p.get("expected_team_slot") and names_match(p.get("nom"), p.get("prenom"), rp):
+                            p["expected_team_slot"] = slot
+    except Exception:
+        pass
+
+    for p in participants.values():
+        if p.get("id_checked") and p.get("expected_team_slot"):
+            p["team_slot"] = p["expected_team_slot"]
+        else:
+            p["team_slot"] = None
 
     return participants
 
@@ -392,6 +524,68 @@ def create_upload_url():
         return jsonify({"error": "Impossible de générer une URL d'upload sécurisée"}), 500
 
 
+@app.route("/api/identite/direct", methods=["POST"])
+def submit_direct_identity():
+    """Enregistre directement une pièce d'identité lue localement par MRZ sur Android, sans passer par le LLM."""
+    if not is_authorized_request():
+        return jsonify({"error": "Unauthorized"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    nom = (payload.get("nom") or "").strip()
+    prenom = (payload.get("prenom") or "").strip()
+    if not nom or not prenom:
+        return jsonify({"error": "Champs nom et prenom obligatoires"}), 400
+
+    first_name = slugify_filename_part(prenom)
+    last_name = slugify_filename_part(nom)
+    short_id = uuid.uuid4().hex[:8]
+    result_filename = f"PID_{first_name}_{last_name}_{short_id}.json"
+
+    pid_record = {
+        "type": "identite",
+        "document_subtype": payload.get("document_subtype") or "mrz_local",
+        "nom": nom,
+        "prenom": prenom,
+        "prenoms": [p for p in re.split(r"[\s,;]+", prenom) if p],
+        "issuing_country": payload.get("issuing_country") or None,
+        "check_digits_valid": bool(payload.get("check_digits_valid", True)),
+        "source": payload.get("source") or "android_mrz",
+        "image_uri": None,
+        "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+    }
+
+    try:
+        bucket = storage_client.bucket(RESULTS_BUCKET_NAME)
+        result_blob = bucket.blob(result_filename)
+        result_blob.upload_from_string(
+            json.dumps(pid_record, indent=4, ensure_ascii=False),
+            content_type="application/json",
+        )
+        logging.info(f"Identité MRZ directe sauvegardée sous {result_filename} (sans LLM)")
+
+        # Vérifier si ce nom/prénom correspond déjà à un joueur du roster ou d'une licence scannée
+        matched = False
+        try:
+            participants = get_participants_data()
+            matched = any(
+                names_match(p.get("nom"), p.get("prenom"), pid_record)
+                for p in participants.values()
+            )
+        except Exception as e:
+            logging.warning(f"Impossible de vérifier la correspondance immédiate pour {result_filename}: {e}")
+
+        return jsonify({
+            "status": "done",
+            "result_file": result_filename,
+            "nom": nom,
+            "prenom": prenom,
+            "matched": matched,
+        }), 200
+    except Exception as e:
+        logging.error(f"Erreur lors de l'enregistrement direct de l'identité : {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/scan-status/<path:object_name>", methods=["GET"])
 def get_scan_status(object_name):
     """Retourne l'état du traitement OCR asynchrone (pending/processing/done/error) pour un fichier uploadé."""
@@ -423,11 +617,12 @@ def reset_match():
     if not is_authorized_request():
         return jsonify({"error": "Unauthorized"}), 401
 
-    archive_prefix = f"archive/{dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d_%H-%M-%S')}/"
+    now_utc = dt.datetime.now(dt.timezone.utc)
+    archive_prefix = f"archive/{now_utc.strftime('%Y-%m-%d_%H-%M-%S')}/"
     archived_count = 0
     try:
         bucket = storage_client.bucket(RESULTS_BUCKET_NAME)
-        active_prefixes = ("LIC_", "PID_", "UNKNOWN_", "STATUS_", "ROSTER_")
+        active_prefixes = ("LIC_", "PID_", "UNKNOWN_", "STATUS_", "ROSTER_", "BOARD_")
         for blob in list(bucket.list_blobs()):
             if "/" in blob.name:
                 continue
@@ -435,6 +630,10 @@ def reset_match():
                 bucket.copy_blob(blob, bucket, f"{archive_prefix}{blob.name}")
                 blob.delete()
                 archived_count += 1
+        bucket.blob("MATCH_RESET_AT.json").upload_from_string(
+            json.dumps({"reset_at": now_utc.isoformat()}),
+            content_type="application/json",
+        )
         logging.info(f"Rencontre réinitialisée : {archived_count} fichiers archivés sous {archive_prefix}")
         return jsonify({
             "status": "reset",
@@ -526,11 +725,34 @@ Retourne UNIQUEMENT un JSON valide de cette forme :
         return add_cors_headers(jsonify({"error": str(e)})), 500
 
 
-@app.route("/api/tenup/roster", methods=["GET", "OPTIONS"])
-def get_tenup_roster():
-    """Retourne les compositions d'équipes Ten'Up importées pour la rencontre courante."""
+@app.route("/api/tenup/roster", methods=["GET", "POST", "OPTIONS"])
+def tenup_roster():
+    """Lit ou enregistre directement (sans LLM) les compositions d'équipes Ten'Up parsées dans le DOM."""
     if request.method == "OPTIONS":
         return add_cors_headers(app.make_response(("", 204)))
+
+    if request.method == "POST":
+        if not is_authorized_request():
+            return add_cors_headers(jsonify({"error": "Unauthorized"})), 401
+        payload = request.get_json(silent=True) or {}
+        roster = {
+            "tenupUrl": (payload.get("tenupUrl") or "").strip(),
+            "team1Name": (payload.get("team1Name") or "").strip(),
+            "team1Players": payload.get("team1Players") or [],
+            "team2Name": (payload.get("team2Name") or "").strip(),
+            "team2Players": payload.get("team2Players") or [],
+            "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
+        }
+        try:
+            bucket = storage_client.bucket(RESULTS_BUCKET_NAME)
+            bucket.blob("ROSTER_CURRENT.json").upload_from_string(
+                json.dumps(roster, indent=2, ensure_ascii=False),
+                content_type="application/json",
+            )
+            return add_cors_headers(jsonify(roster)), 200
+        except Exception as e:
+            logging.error(f"Erreur sauvegarde ROSTER_CURRENT.json : {e}")
+            return add_cors_headers(jsonify({"error": str(e)})), 500
 
     try:
         bucket = storage_client.bucket(RESULTS_BUCKET_NAME)
@@ -541,6 +763,41 @@ def get_tenup_roster():
     except Exception as e:
         logging.error(f"Erreur lecture ROSTER_CURRENT.json : {e}")
         return add_cors_headers(jsonify({})), 200
+
+
+@app.route("/api/board-state", methods=["GET", "POST"])
+def board_state():
+    """Synchronise l'état du tableau (affectations glisser-déposer, titres, URL Ten'Up, cases cochées) entre machines."""
+    bucket = storage_client.bucket(RESULTS_BUCKET_NAME)
+    state_blob = bucket.blob("BOARD_STATE.json")
+
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        state = {
+            "team1Name": (payload.get("team1Name") or "").strip(),
+            "team2Name": (payload.get("team2Name") or "").strip(),
+            "tenupUrl": (payload.get("tenupUrl") or "").strip(),
+            "assignments": payload.get("assignments") or {},
+            "checked": payload.get("checked") or {},
+            "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
+        }
+        try:
+            state_blob.upload_from_string(
+                json.dumps(state, indent=2, ensure_ascii=False),
+                content_type="application/json",
+            )
+            return jsonify(state), 200
+        except Exception as e:
+            logging.error(f"Erreur sauvegarde BOARD_STATE.json : {e}")
+            return jsonify({"error": str(e)}), 500
+
+    try:
+        if not state_blob.exists():
+            return jsonify({}), 200
+        return jsonify(json.loads(state_blob.download_as_string())), 200
+    except Exception as e:
+        logging.error(f"Erreur lecture BOARD_STATE.json : {e}")
+        return jsonify({}), 200
 
 
 @app.route("/api/test-data", methods=["GET"])

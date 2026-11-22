@@ -4,10 +4,12 @@ Si un champ est absent, tronqué ou illisible, renvoie `null` : ne devine jamais
 
 ### 1. Classification du document
 Ne te base PAS uniquement sur la présence d'une photo (un écran Ten'Up peut contenir un avatar, un verso de CNIe n'a pas de photo). Identifie sémantiquement :
-- `type`: `"licence"`, `"identite"` ou `"inconnu"`
+- **RÈGLE STRICTE FFT** : Seules les **Cartes Nationales d'Identité (CNI)** et les **Passeports** sont autorisés comme pièces d'identité (`type: "identite"`). Les **permis de conduire** et les **titres / cartes de séjour (ou cartes de résident)** sont STRICTEMENT INTERDITS et doivent TOUJOURS être classés en `type: "non_autorise"`.
+- `type`: `"licence"`, `"identite"`, `"non_autorise"` ou `"inconnu"`
 - `document_subtype`:
-  - Pour `"identite"` : `"cni_fr_ancienne"`, `"cni_fr_nouvelle_recto"`, `"cni_fr_nouvelle_verso"`, `"passeport"`
+  - Pour `"identite"` : `"cni_fr_ancienne"`, `"cni_fr_nouvelle_recto"`, `"cni_fr_nouvelle_verso"`, `"cni_etrangere"`, `"passeport"`
   - Pour `"licence"` : `"attestation_fft"` ou `"tenup_ecran"`
+  - Pour `"non_autorise"` : `"permis_conduire"` ou `"titre_sejour"`
   - Pour `"inconnu"` : `"inconnu"`
 - `confiance`: `"haute"`, `"moyenne"` ou `"faible"`
 

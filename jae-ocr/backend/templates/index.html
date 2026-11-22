@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JAE-OCR</title>
+    <link rel="icon" type="image/svg+xml" href="/static/img/logo.svg">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
@@ -19,7 +20,10 @@
             <a href="/" class="alert-link ms-2">Quitter le mode debug</a>
         </div>
         {% endif %}
-        <h1 contenteditable="true" class="text-center my-4">Nom de la rencontre</h1>
+        <div class="d-flex justify-content-center align-items-center gap-3 my-3">
+            <img src="/static/img/logo.svg" alt="JAE Identités" width="52" height="52" style="flex-shrink: 0;">
+            <h1 contenteditable="true" class="text-center m-0">Nom de la rencontre</h1>
+        </div>
         <div class="d-flex justify-content-center align-items-center gap-2 mb-3 flex-wrap">
             <input type="url" id="tenupUrlInput" class="form-control form-control-sm" style="max-width: 480px;" placeholder="URL officielle Ten'Up de la rencontre (https://tenup.fft.fr/...)">
             <a id="tenupUrlLink" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary disabled" aria-disabled="true">Ouvrir Ten'Up ↗</a>
@@ -43,14 +47,56 @@
 
         <div class="row mt-4">
             <div class="col-md-6">
-                <h2 contenteditable="true">Equipe 1</h2>
-                <div id="team1Roster" class="small text-muted mb-2"></div>
-                <div id="team1" class="list-group d-flex flex-row flex-wrap"></div>
+                <h2 id="team1Title" contenteditable="true">Equipe 1</h2>
+                <div id="team1" class="list-group d-flex flex-row flex-wrap">
+                    {% for p in participants if p.team_slot == 'team1' %}
+                    <div class="list-group-item participant-card" data-id="{{ p.licence }}" data-expected-slot="{{ p.expected_team_slot or '' }}" data-club="{{ p.club or '' }}">
+                        <p><strong>Nom:</strong>
+                            {% if p.image_uri %}
+                            <a href="{{ p.image_uri }}" target="_blank">{{ p.nom }}</a>
+                            {% else %}
+                            {{ p.nom }}
+                            {% endif %}
+                        </p>
+                        <p><strong>Prénom:</strong> {{ p.prenom }}</p>
+                        <p><strong>Classement:</strong> {{ p.classement }}</p>
+                        <p class="card-detail"><strong>Licence:</strong> {{ p.licence }}</p>
+                        <p class="card-detail"><strong>Année validité:</strong> {{ p.annee_validite }}</p>
+                        <p class="card-detail"><strong>Club:</strong> {{ p.club }}</p>
+                        <p class="card-detail"><strong>Statut:</strong> {{ p.statut }}</p>
+                        <div class="form-check card-detail">
+                            <input class="form-check-input" type="checkbox" {% if p.id_checked %}checked{% endif %}>
+                            <label class="form-check-label">Pièce d'identité</label>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
             </div>
             <div class="col-md-6">
-                <h2 contenteditable="true">Equipe 2</h2>
-                <div id="team2Roster" class="small text-muted mb-2"></div>
-                <div id="team2" class="list-group d-flex flex-row flex-wrap"></div>
+                <h2 id="team2Title" contenteditable="true">Equipe 2</h2>
+                <div id="team2" class="list-group d-flex flex-row flex-wrap">
+                    {% for p in participants if p.team_slot == 'team2' %}
+                    <div class="list-group-item participant-card" data-id="{{ p.licence }}" data-expected-slot="{{ p.expected_team_slot or '' }}" data-club="{{ p.club or '' }}">
+                        <p><strong>Nom:</strong>
+                            {% if p.image_uri %}
+                            <a href="{{ p.image_uri }}" target="_blank">{{ p.nom }}</a>
+                            {% else %}
+                            {{ p.nom }}
+                            {% endif %}
+                        </p>
+                        <p><strong>Prénom:</strong> {{ p.prenom }}</p>
+                        <p><strong>Classement:</strong> {{ p.classement }}</p>
+                        <p class="card-detail"><strong>Licence:</strong> {{ p.licence }}</p>
+                        <p class="card-detail"><strong>Année validité:</strong> {{ p.annee_validite }}</p>
+                        <p class="card-detail"><strong>Club:</strong> {{ p.club }}</p>
+                        <p class="card-detail"><strong>Statut:</strong> {{ p.statut }}</p>
+                        <div class="form-check card-detail">
+                            <input class="form-check-input" type="checkbox" {% if p.id_checked %}checked{% endif %}>
+                            <label class="form-check-label">Pièce d'identité</label>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
             </div>
         </div>
 
@@ -58,8 +104,8 @@
             <div class="col-md-12">
                 <h2>Non-affecté</h2>
                 <div id="unassigned" class="list-group d-flex flex-row flex-wrap">
-                    {% for p in participants %}
-                    <div class="list-group-item participant-card" data-id="{{ p.licence }}">
+                    {% for p in participants if not p.team_slot %}
+                    <div class="list-group-item participant-card" data-id="{{ p.licence }}" data-expected-slot="{{ p.expected_team_slot or '' }}" data-club="{{ p.club or '' }}">
                         <p><strong>Nom:</strong>
                             {% if p.image_uri %}
                             <a href="{{ p.image_uri }}" target="_blank">{{ p.nom }}</a>

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="JAE Identités">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F2B46"/>
+      <stop offset="100%" stop-color="#1B4965"/>
+    </linearGradient>
+    <linearGradient id="clay" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E06D37"/>
+      <stop offset="100%" stop-color="#C84B1D"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded badge background -->
+  <rect x="4" y="4" width="120" height="120" rx="26" fill="url(#bg)" stroke="url(#clay)" stroke-width="5"/>
+  <!-- Stylized ID card -->
+  <rect x="18" y="30" width="76" height="52" rx="8" fill="#FFFFFF" opacity="0.96"/>
+  <!-- Photo silhouette on card -->
+  <circle cx="35" cy="48" r="7.5" fill="#1B4965"/>
+  <path d="M25 69 C25 60, 45 60, 45 69 Z" fill="#1B4965"/>
+  <!-- ID text lines -->
+  <rect x="50" y="42" width="34" height="5" rx="2.5" fill="#0F2B46"/>
+  <rect x="50" y="52" width="26" height="4.5" rx="2.25" fill="#64748B"/>
+  <rect x="50" y="61" width="30" height="4.5" rx="2.25" fill="#94A3B8"/>
+  <!-- Tennis ball + check badge -->
+  <circle cx="94" cy="84" r="22" fill="#C9E622" stroke="#0F2B46" stroke-width="4"/>
+  <path d="M80 71 C88 78, 88 90, 80 97" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M108 71 C100 78, 100 90, 108 97" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"/>
+  <!-- Verified checkmark -->
+  <path d="M85 84.5 L91.5 91 L104 77.5" fill="none" stroke="#0F2B46" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- JAE monogram -->
+  <text x="20" y="107" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif" font-size="20" font-weight="800" letter-spacing="1.5" fill="#FFFFFF">JAE</text>
+</svg>
