@@ -78,12 +78,12 @@ object MrzParser {
             val l2 = fitLength(lines[i + 1], 36) ?: continue
             if (!l1.startsWith("IDFRA")) continue
 
-            val surname = l1.substring(5, 30).replace("<", " ").trim().replace(Regex("\\s+"), " ")
+            val surname = sanitizeMrzName(l1.substring(5, 30))
             if (surname.isBlank()) continue
 
             val docNumber = l2.substring(0, 12).replace("<", "")
             val docValid = verifyCheckDigit(l2.substring(0, 12), l2[12])
-            val givenNames = l2.substring(13, 27).replace("<<", " ").replace("<", " ").trim().replace(Regex("\\s+"), " ")
+            val givenNames = sanitizeMrzName(l2.substring(13, 27))
             val dobValid = verifyCheckDigit(l2.substring(27, 33), l2[33])
 
             return MrzData(
@@ -144,10 +144,23 @@ object MrzParser {
         }
     }
 
+    private fun sanitizeMrzName(field: String): String {
+        return field
+            .replace("<<", " ")
+            .replace("<", " ")
+            .replace('0', 'O')
+            .replace('1', 'I')
+            .replace('5', 'S')
+            .replace('8', 'B')
+            .replace('2', 'Z')
+            .trim()
+            .replace(Regex("\\s+"), " ")
+    }
+
     private fun splitNameField(field: String): Pair<String, String> {
         val parts = field.split("<<", limit = 2)
-        val surname = parts.getOrNull(0).orEmpty().replace("<", " ").trim().replace(Regex("\\s+"), " ")
-        val givenNames = parts.getOrNull(1).orEmpty().replace("<", " ").trim().replace(Regex("\\s+"), " ")
+        val surname = sanitizeMrzName(parts.getOrNull(0).orEmpty())
+        val givenNames = sanitizeMrzName(parts.getOrNull(1).orEmpty())
         return surname to givenNames
     }
 

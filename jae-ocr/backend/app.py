@@ -37,6 +37,10 @@ TRANSLITERATION_MAP = str.maketrans({
     "ø": "o",
     "đ": "d",
     "ł": "l",
+    "0": "o",
+    "1": "i",
+    "5": "s",
+    "8": "b",
 })
 
 

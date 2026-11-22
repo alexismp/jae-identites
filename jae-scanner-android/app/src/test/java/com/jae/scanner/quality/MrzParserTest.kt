@@ -93,4 +93,20 @@ class MrzParserTest {
         val residencePermit = MlKitTextPostCaptureValidator.classifyText("RÉPUBLIQUE FRANÇAISE\nTITRE DE SÉJOUR\nCARTE DE RÉSIDENT\nMARTIN Léa")
         assertFalse(residencePermit.isValid)
     }
+
+    @Test
+    fun correctsOcrDigitsInMrzNameFields() {
+        val docNum = "123456789012"
+        val docCheck = MrzParser.computeCheckDigit(docNum)
+        val dob = "900512"
+        val dobCheck = MrzParser.computeCheckDigit(dob)
+        val l1 = "IDFRA" + "FLECHARD".padEnd(25, '<') + "750001"
+        val l2 = "$docNum$docCheck" + "CHARL0TTE<<ANN" + "$dob${dobCheck}F0"
+
+        val parsed = MrzParser.parse("$l1\n$l2")
+        assertNotNull(parsed)
+        assertEquals("FLECHARD", parsed!!.surname)
+        assertEquals("CHARLOTTE ANN", parsed.givenNames)
+        assertTrue(parsed.checkDigitsValid)
+    }
 }
