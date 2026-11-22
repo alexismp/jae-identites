@@ -1,6 +1,7 @@
 package com.jae.scanner
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -19,6 +20,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -27,11 +29,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.jae.scanner.auth.FirebaseAuthManager
 import com.jae.scanner.ui.ScannerScreen
 
 class MainActivity : ComponentActivity() {
+
+    private var authRevision by mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleOAuthIntent(intent)
+
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -58,7 +66,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     if (hasCameraPermission) {
-                        ScannerScreen()
+                        ScannerScreen(authRevision = authRevision)
                     } else {
                         Column(
                             modifier = Modifier
@@ -75,6 +83,25 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleOAuthIntent(intent)
+    }
+
+    private fun handleOAuthIntent(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme == "jaescanner" && uri.host == "auth") {
+            val email = uri.getQueryParameter("email").orEmpty()
+            val idToken = uri.getQueryParameter("id_token").orEmpty()
+            val refreshToken = uri.getQueryParameter("refresh_token").orEmpty()
+            if (idToken.isNotBlank() && refreshToken.isNotBlank()) {
+                FirebaseAuthManager(this).saveOAuthSession(email, idToken, refreshToken)
+                authRevision++
             }
         }
     }

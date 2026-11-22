@@ -1,7 +1,9 @@
 package com.jae.scanner.ui
 
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.FocusMeteringAction
@@ -39,6 +41,7 @@ import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashlightOn
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -48,6 +51,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -70,7 +74,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.jae.scanner.BuildConfig
 import com.jae.scanner.R
+import com.jae.scanner.auth.FirebaseAuthManager
 import com.jae.scanner.network.ScanUploader
 import com.jae.scanner.quality.DetectedDocumentKind
 import com.jae.scanner.quality.GeminiNanoPostCaptureValidator
@@ -106,14 +112,24 @@ private data class ScanHistoryEntry(
 )
 
 @Composable
-fun ScannerScreen() {
+fun ScannerScreen(authRevision: Int = 0) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
 
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
-    val uploader = remember { ScanUploader() }
+    val authManager = remember { FirebaseAuthManager(context) }
+    val uploader = remember { ScanUploader(tokenProvider = { authManager.getValidIdToken() }) }
     val validator = remember { GeminiNanoPostCaptureValidator() }
+
+    var signedInEmail by remember { mutableStateOf(authManager.getCurrentEmail()) }
+    var showLoginDialog by remember { mutableStateOf(!authManager.isSignedIn()) }
+
+    LaunchedEffect(authRevision) {
+        val email = authManager.getCurrentEmail()
+        signedInEmail = email
+        showLoginDialog = !authManager.isSignedIn()
+    }
 
     var previewViewRef by remember { mutableStateOf<PreviewView?>(null) }
     var camera by remember { mutableStateOf<Camera?>(null) }
@@ -562,7 +578,16 @@ fun ScannerScreen() {
         if (showHistoryDialog) {
             AlertDialog(
                 onDismissRequest = { showHistoryDialog = false },
-                title = { Text("Historique des actions (${actionHistory.size})") },
+                title = {
+                    Column {
+                        Text("Historique des actions (${actionHistory.size})")
+                        Text(
+                            text = signedInEmail?.let { "Connecté : $it" } ?: "Non connecté",
+                            fontWeight = FontWeight.Normal,
+                            color = Color(0xFF475569)
+                        )
+                    }
+                },
                 text = {
                     if (actionHistory.isEmpty()) {
                         Text("Aucune action enregistrée pour le moment.")
@@ -602,12 +627,49 @@ fun ScannerScreen() {
                     }
                 },
                 dismissButton = {
-                    if (actionHistory.isNotEmpty()) {
-                        TextButton(onClick = { actionHistory.clear() }) {
-                            Text("Effacer")
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (actionHistory.isNotEmpty()) {
+                            TextButton(onClick = { actionHistory.clear() }) {
+                                Text("Effacer")
+                            }
+                        }
+                        TextButton(onClick = {
+                            if (signedInEmail != null) {
+                                authManager.signOut()
+                                signedInEmail = null
+                                showHistoryDialog = false
+                                showLoginDialog = true
+                            } else {
+                                showHistoryDialog = false
+                                showLoginDialog = true
+                            }
+                        }) {
+                            Text(if (signedInEmail != null) "Déconnexion" else "Connexion")
                         }
                     }
                 }
+            )
+        }
+
+        if (showLoginDialog) {
+            AlertDialog(
+                onDismissRequest = { if (signedInEmail != null) showLoginDialog = false },
+                title = { Text("Connexion OAuth — Juge-Arbitre") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Connectez-vous via OAuth (Google, Microsoft ou Apple) pour lier vos scans à votre rencontre active. Aucun mot de passe n'est utilisé.")
+                        Button(
+                            onClick = {
+                                val authUrl = "${BuildConfig.OCR_BACKEND_URL.trimEnd('/')}/mobile-auth"
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(authUrl)))
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Se connecter via OAuth")
+                        }
+                    }
+                },
+                confirmButton = {}
             )
         }
     }

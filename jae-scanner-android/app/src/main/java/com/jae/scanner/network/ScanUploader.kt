@@ -40,7 +40,8 @@ data class ScanStatusResult(
 class ScanUploader(
     private val ocrBaseUrl: String = BuildConfig.OCR_BACKEND_URL.trimEnd('/'),
     private val scannerBaseUrl: String = BuildConfig.SCANNER_BACKEND_URL.trimEnd('/'),
-    private val apiKey: String = BuildConfig.SCANNER_API_KEY
+    private val apiKey: String = BuildConfig.SCANNER_API_KEY,
+    private val tokenProvider: (suspend () -> String?)? = null
 ) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -49,8 +50,9 @@ class ScanUploader(
         .build()
 
     suspend fun upload(jpegBytes: ByteArray): Result<UploadResult> = withContext(Dispatchers.IO) {
+        val bearerToken = tokenProvider?.invoke()
         if (ocrBaseUrl.isNotBlank()) {
-            val signedAttempt = uploadViaSignedUrl(jpegBytes)
+            val signedAttempt = uploadViaSignedUrl(jpegBytes, bearerToken)
             if (signedAttempt.isSuccess) return@withContext signedAttempt
         }
         uploadViaScannerEndpoint(jpegBytes)
@@ -61,6 +63,7 @@ class ScanUploader(
      * au backend jae-ocr sans téléverser l'image ni solliciter le LLM.
      */
     suspend fun submitDirectIdentity(mrz: MrzData): Result<DirectIdentityResult> = withContext(Dispatchers.IO) {
+        val bearerToken = tokenProvider?.invoke()
         runCatching {
             if (ocrBaseUrl.isBlank()) {
                 throw IOException("OCR_BACKEND_URL non configurée")
@@ -78,7 +81,9 @@ class ScanUploader(
                 .url("$ocrBaseUrl/api/identite/direct")
                 .post(payload.toRequestBody("application/json".toMediaType()))
 
-            if (apiKey.isNotBlank()) {
+            if (!bearerToken.isNullOrBlank()) {
+                reqBuilder.header("Authorization", "Bearer $bearerToken")
+            } else if (apiKey.isNotBlank()) {
                 reqBuilder.header("X-API-Key", apiKey)
             }
 
@@ -166,14 +171,16 @@ class ScanUploader(
         )
     }
 
-    private fun uploadViaSignedUrl(jpegBytes: ByteArray): Result<UploadResult> {
+    private fun uploadViaSignedUrl(jpegBytes: ByteArray, bearerToken: String?): Result<UploadResult> {
         return runCatching {
             val jsonBody = JSONObject().put("content_type", "image/jpeg").toString()
             val urlReqBuilder = Request.Builder()
                 .url("$ocrBaseUrl/api/upload-url")
                 .post(jsonBody.toRequestBody("application/json".toMediaType()))
 
-            if (apiKey.isNotBlank()) {
+            if (!bearerToken.isNullOrBlank()) {
+                urlReqBuilder.header("Authorization", "Bearer $bearerToken")
+            } else if (apiKey.isNotBlank()) {
                 urlReqBuilder.header("X-API-Key", apiKey)
             }
 
