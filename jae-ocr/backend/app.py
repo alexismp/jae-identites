@@ -83,6 +83,21 @@ def extract_first_name_tokens(prenom, prenoms=None):
     return tokens
 
 
+def _first_names_match(tokens_a, tokens_b):
+    """Compare deux ensembles de prénoms normalisés (égalité exacte ou troncature ≥ 4 car., ex. ALEXANDR / ALEXANDRE)."""
+    if tokens_a & tokens_b:
+        return True
+    for a in tokens_a:
+        if len(a) < 4:
+            continue
+        for b in tokens_b:
+            if len(b) < 4:
+                continue
+            if a.startswith(b) or b.startswith(a):
+                return True
+    return False
+
+
 def names_match(lic_nom, lic_prenom, pid_data):
     """Rapproche une licence FFT avec les données JSON d'une pièce d'identité."""
     lic_nom_norm = normalize_name(lic_nom)
@@ -103,12 +118,12 @@ def names_match(lic_nom, lic_prenom, pid_data):
     if not pid_surnames or not pid_prenom_tokens:
         return False
 
-    # 1. Correspondance nominale (nom de naissance OU nom d'usage) + prénom / premier prénom
-    if lic_nom_norm in pid_surnames and (lic_prenom_tokens & pid_prenom_tokens):
+    # 1. Correspondance nominale (nom de naissance OU nom d'usage, sans tirets/espaces) + prénom (exact ou tronqué)
+    if lic_nom_norm in pid_surnames and _first_names_match(lic_prenom_tokens, pid_prenom_tokens):
         return True
 
     # 2. Tolérance inversion nom / prénom (fréquent sur certains passeports étrangers)
-    if lic_nom_norm in pid_prenom_tokens and (lic_prenom_tokens & pid_surnames):
+    if lic_nom_norm in pid_prenom_tokens and _first_names_match(lic_prenom_tokens, pid_surnames):
         return True
 
     return False
