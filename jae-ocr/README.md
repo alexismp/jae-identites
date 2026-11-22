@@ -4,14 +4,13 @@ Tableau de bord web de gestion de la rencontre par équipes et service backend r
 
 ## Fonctionnalités (pour les utilisateurs)
 
-- **Tableau de rencontre clair en 4 zones** : **Officiels**, **Équipe 1**, **Équipe 2** et **Non-affecté**, avec vue complète ou condensée.
+- **Tableau de rencontre clair en 4 zones** : **Officiels**, **Équipe 1**, **Équipe 2** et **Non-affecté**, avec vue complète ou condensée, poignée de glisser-déposer dédiée (`⋮⋮ Déplacer`) libérant la sélection de texte sur chaque fiche, et bouton de copie en un clic (`📋`) sur le numéro de licence.
 - **Validation et placement automatiques** : les joueurs importés de Ten'Up attendent dans *Non-affecté* ; dès que leur pièce d'identité (CNI ou passeport) est scannée, la case *Pièce d'identité* se coche et leur fiche bascule automatiquement dans la colonne de leur équipe.
 - **Protection contre les erreurs** : les noms de clubs importés de Ten'Up sont verrouillés (ils ne sont plus écrasés par un glisser-déposer) et il est impossible de déposer une joueuse ou un joueur dans la colonne de l'équipe adverse.
 - **Contrôle réglementaire strict** : seuls les **CNI et passeports** sont acceptés (permis de conduire et titres de séjour refusés) ; une pièce d'identité seule sans licence ni présence dans la liste Ten'Up (ex. officiel) attend sa licence avant de créer une fiche.
 - **Synchronisation multi-écrans** : chaque glisser-déposer, titre ou lien Ten'Up est partagé automatiquement entre tous les ordinateurs/tablettes connectés.
-- **Accès sécurisé & multi-rencontres en parallèle** : authentification nominative (Firebase Auth) avec validation préalable par l'administrateur, **une seule rencontre active par JAE à la fois**, et URL dédiée `/m/<matchId>` qui survit au rafraîchissement de la page.
-- **Console d'administration séparée (`/admin`)** : URL dédiée (hors interface de rencontre) permettant à l'administrateur (`alexis.mp@gmail.com` par défaut, extensible dynamiquement dans Firestore) d'approuver/bloquer les utilisateurs, promouvoir d'autres administrateurs, consulter/archiver/nettoyer toutes les rencontres et analyser l'historique d'activité et les erreurs.
-- **Lien optionnel vers le scanner web de secours** : accessible directement depuis la barre d'outils du tableau de bord (`Scanner web (secours) ↗`).
+- **Accès sécurisé & multi-rencontres en parallèle** : authentification nominative Google OAuth (Firebase Auth) avec validation préalable par l'administrateur, **une seule rencontre active par JAE à la fois**, et URL dédiée `/m/<matchId>` (réutilisant directement l'identifiant officiel Ten'Up lors d'un import, de façon idempotente en cas de réimport).
+- **Menu Actions épuré & Console d'administration (`/admin`)** : le menu déroulant **Actions** regroupe *Vue Condensée*, *Exporter / Importer une rencontre*, *Scanner web ↗*, *Nouvelle rencontre* et, uniquement pour les comptes administrateurs (`alexis.mp@gmail.com` par défaut, extensible dynamiquement dans Firestore), un lien direct vers la **Console d'administration** (`/admin`).
 - **Mode Démo interactif (`/demo`)** : permet de tester l'ensemble du parcours (import Ten'Up, scan CNI MRZ sans LLM, remplaçant/officiel, rejet permis de conduire, protection glisser-déposer) sans connexion ni écriture serveur.
 
 ![Tableau de bord JAE-OCR](../docs/screenshots/ocr-demo.png)
